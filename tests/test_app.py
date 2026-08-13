@@ -1,6 +1,8 @@
 """Headless tests for the TUI app."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from textual.widgets import Button, Input, TextArea
 
@@ -25,7 +27,7 @@ async def test_bindings_registered() -> None:
     app = TranscriberApp()
     async with app.run_test(size=(100, 30)):
         names = {b.key for b in app.BINDINGS}
-        expected = {"q", "t", "s", "e", "r", "c", "b", "o"}
+        expected = {"q", "t", "s", "e", "r", "c", "b", "o", "d"}
         assert expected.issubset(names)
 
 
@@ -79,3 +81,51 @@ async def test_cycle_backend_updates_model_and_base_url() -> None:
         assert app._config.summarize_backend == "ollama"
         assert app._config.summarize_model == "hermes-qwen35b:latest"
         assert app._config.summarize_base_url == "http://localhost:11434/v1"
+
+
+@pytest.mark.asyncio
+async def test_on_env_reloaded_applies_new_config(monkeypatch, tmp_path) -> None:
+    """After editing .env, _on_env_reloaded must apply the new values live.
+
+    Simulates what happens when the user presses D, edits .env in their
+    editor to switch backends, and returns to the TUI — without this,
+    edits to .env made mid-session would be invisible until restart.
+    """
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "SUMMARIZE_BACKEND=ollama\nOLLAMA_MODEL=test-model:latest\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "transcriber.config._find_env_file", lambda: env_path
+    )
+
+    app = TranscriberApp()
+    async with app.run_test(size=(100, 30)):
+        assert app._config.summarize_backend == "openrouter"  # pre-edit default
+        app._on_env_reloaded()
+        assert app._config.summarize_backend == "ollama"
+        assert app._config.summarize_model == "test-model:latest"
+
+
+def test_resolve_env_path_creates_from_example(tmp_path, monkeypatch) -> None:
+    """resolve_env_path seeds a new .env from .env.example when none exists.
+
+    Fully isolated in tmp_path: never touches the real project's .env.
+    """
+    from transcriber import config as config_mod
+
+    fake_root = tmp_path / "project"
+    (fake_root / "transcriber").mkdir(parents=True)
+    (fake_root / ".env.example").write_text("OPENROUTER_API_KEY=\n", encoding="utf-8")
+
+    monkeypatch.setattr(config_mod, "_find_env_file", lambda: None)
+    # config.py resolves project_root as Path(__file__).resolve().parent.parent;
+    # point __file__ at a fake config.py under fake_root/transcriber/ so that
+    # math lands on fake_root without touching anything real.
+    monkeypatch.setattr(config_mod, "__file__", str(fake_root / "transcriber" / "config.py"))
+
+    created = config_mod.resolve_env_path()
+    assert created == fake_root / ".env"
+    assert created.exists()
+    assert created.read_text(encoding="utf-8") == "OPENROUTER_API_KEY=\n"

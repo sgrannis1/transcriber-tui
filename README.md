@@ -12,6 +12,7 @@ A Textual TUI that transcribes audio files with local [faster-whisper](https://g
 - Stream summaries from an LLM with live token display
 - Cycle backends at runtime with `B` — switch between cloud and local models without restarting
 - Editable summarization prompts — press `E` to open in vim, save, and reload
+- Edit `.env` (API key, backend, model) directly from the TUI with `D` — no manual file hunting
 - Multiple prompt presets (meeting summary, lecture notes, quick recap, custom)
 - All configuration lives in plain text files — no databases, no cloud
 
@@ -24,15 +25,16 @@ cd transcriber-tui
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e .
 
-# Configure your OpenRouter API key
-cp .env.example .env
-# Edit .env and set: OPENROUTER_API_KEY=<your-key>
-# Get a key at https://openrouter.ai/keys
-
-# Launch (no args needed — browse to your file in the TUI)
+# Launch — no args needed, browse to your file in the TUI
 python -m transcriber
 
-# Or pass a file directly:
+# First time only: press D inside the TUI to open/create .env in $EDITOR
+# and set OPENROUTER_API_KEY (get one at https://openrouter.ai/keys), or
+# do it from the shell instead:
+cp .env.example .env
+# Edit .env and set: OPENROUTER_API_KEY=<your-key>
+
+# Or pass an audio file directly:
 python -m transcriber /path/to/audio.mp3
 ```
 
@@ -47,6 +49,7 @@ On first run, Whisper downloads the `base` model (~142MB) to `~/.cache/huggingfa
 | `S` | Summarize the transcript |
 | `B` | Cycle summarization backend (openrouter → ollama → llamacpp → lmstudio → local) |
 | `E` | Edit prompts in `$EDITOR` (default: vim) |
+| `D` | Edit `.env` in `$EDITOR` — creates it from `.env.example` if missing |
 | `R` | Reload prompts from disk |
 | `C` | Cycle to the next prompt preset |
 | `Q` | Quit |
@@ -74,6 +77,14 @@ OLLAMA_MODEL=hermes-qwen35b:latest
 
 **Note:** pressing `B` to cycle backends at runtime only auto-fills a model name for `openrouter` and `ollama` (which have sane defaults). Cycling to `llamacpp`, `lmstudio`, or `local` clears the model field — the status bar shows `(?)` until you set one via `SUMMARIZE_MODEL`/`.env` and restart, since there's no single "right" model name for a generic local server.
 
+## Editing .env From the TUI
+
+Press `D` at any time to open `.env` in `$EDITOR`. If no `.env` exists yet (first run), one is created by copying `.env.example` so you always have something concrete to edit — including a first-time `OPENROUTER_API_KEY=` line to fill in.
+
+The TUI suspends while the editor is open (same mechanism as `E` for prompts) and reloads configuration the moment you save and quit — no restart needed. The meta row and status bar reflect the new backend/model immediately.
+
+This is the fastest way to switch backends permanently (as opposed to `B`'s temporary in-session cycling): press `D`, change `SUMMARIZE_BACKEND` and the relevant `*_MODEL` line, save, and the new backend is active for the rest of the session and every future launch.
+
 ## Prompt Presets
 
 Prompts live in `~/.config/transcriber/prompts.yaml` (created automatically on first run from the shipped `prompts.yaml`). Edit them in vim by pressing `E` in the TUI, or edit the file directly and press `R` to reload.
@@ -95,7 +106,7 @@ All settings via environment or `.env`:
 | `LLAMACPP_MODEL` | *(empty)* | Local model name (llamacpp backend) |
 | `LMSTUDIO_MODEL` | *(empty)* | Local model name (lmstudio backend) |
 | `WHISPER_MODEL` | `base` | Whisper model: `tiny`, `base`, `small`, `medium`, `large-v3` |
-| `EDITOR` | `vim` | Text editor for prompt editing |
+| `EDITOR` | `vim` | Text editor for prompt (`E`) and `.env` (`D`) editing |
 
 ## Architecture
 

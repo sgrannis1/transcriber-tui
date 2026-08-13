@@ -52,7 +52,7 @@ class Config:
 
 
 def _find_env_file() -> Path | None:
-    """Locate the .env file: project root first, then home."""
+    """Locate an existing .env file: cwd first, then project root, then ~/.hermes."""
     candidates = [
         Path.cwd() / ".env",
         Path(__file__).resolve().parent.parent / ".env",
@@ -62,6 +62,31 @@ def _find_env_file() -> Path | None:
         if cand.exists():
             return cand
     return None
+
+
+def resolve_env_path() -> Path:
+    """Return the .env path to use for editing, creating one if none exists.
+
+    If an .env already exists (see _find_env_file's search order), that
+    exact file is returned so edits land where load_config() actually
+    reads from. Otherwise a new .env is created next to the project's
+    .env.example (seeded from it when present) so there is always a
+    single, predictable file to edit.
+    """
+    existing = _find_env_file()
+    if existing is not None:
+        return existing
+
+    project_root = Path(__file__).resolve().parent.parent
+    new_env = project_root / ".env"
+    example = project_root / ".env.example"
+    if example.exists():
+        import shutil
+
+        shutil.copy2(example, new_env)
+    else:
+        new_env.write_text("OPENROUTER_API_KEY=\n", encoding="utf-8")
+    return new_env
 
 
 def _resolve_backend(raw: str) -> str:
@@ -75,15 +100,21 @@ def _resolve_backend(raw: str) -> str:
     )
 
 
-def load_config() -> Config:
+def load_config(*, reload: bool = False) -> Config:
     """Load configuration from .env and environment variables.
 
     Raises ConfigError on invalid or missing required values (with a clear
     message, never a bare traceback).
+
+    Pass reload=True after the user has edited .env mid-session (e.g. via
+    the in-TUI editor): python-dotenv normally refuses to overwrite
+    variables already present in os.environ, which would make edits to an
+    already-loaded key invisible until the process restarts. reload=True
+    forces the newly-edited file to win.
     """
     env_file = _find_env_file()
     if env_file is not None:
-        load_dotenv(env_file, override=False)
+        load_dotenv(env_file, override=reload)
 
     backend = _resolve_backend(
         os.environ.get("SUMMARIZE_BACKEND", "openrouter")

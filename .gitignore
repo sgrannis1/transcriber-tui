@@ -13,6 +13,8 @@ env/
 
 # Secrets — NEVER commit real keys
 .env
+.env~
+*.env.bak
 
 # Local user config (persistent prompt edits stay local)
 prompts.local.yaml

@@ -58,6 +58,7 @@ class TranscriberApp(App):
         Binding("c", "cycle_prompt", "Cycle Prompt"),
         Binding("b", "cycle_backend", "Cycle Backend"),
         Binding("o", "browse", "Browse File"),
+        Binding("d", "edit_env", "Edit .env"),
     ]
 
     def __init__(self, audio_path: str | None = None) -> None:
@@ -237,6 +238,37 @@ class TranscriberApp(App):
             subprocess.call([editor, path])
         # Reload prompts after the editor closes.
         self.call_from_thread(self._on_prompts_reloaded)
+
+    def action_edit_env(self) -> None:
+        """Open .env in $EDITOR, suspending the TUI meanwhile.
+
+        Creates .env (seeded from .env.example) if none exists yet, so
+        first-time setup — including OPENROUTER_API_KEY — never requires
+        leaving the TUI.
+        """
+        if self._working:
+            return
+        editor = os.environ.get("EDITOR", "vim")
+        path = str(config_mod.resolve_env_path())
+        self.run_worker(self._edit_env_in_editor(editor, path), exclusive=True)
+
+    def _edit_env_in_editor(self, editor: str, path: str) -> None:
+        with self.suspend():
+            subprocess.call([editor, path])
+        self.call_from_thread(self._on_env_reloaded)
+
+    def _on_env_reloaded(self) -> None:
+        """Re-read .env after the editor closes and apply it live."""
+        try:
+            self._config = load_config(reload=True)
+        except ConfigError as exc:
+            self._status(str(exc))
+            return
+        self._update_meta()
+        self._status(
+            f".env reloaded — backend: {self._config.summarize_backend} "
+            f"({self._config.summarize_model or '?'})"
+        )
 
     def action_reload_prompts(self) -> None:
         store = getattr(self, "_store", None) or PromptStore()
