@@ -11,7 +11,7 @@ A Textual TUI that transcribes audio files with local [faster-whisper](https://g
 - Summarize with **OpenRouter** (cloud) or **local models** via Ollama / llama.cpp / LM Studio / any OpenAI-compatible endpoint
 - Stream summaries from an LLM with live token display
 - Cycle backends at runtime with `B` — switch between cloud and local models without restarting
-- Editable summarization prompts — press `E` to open in vim, save, and reload
+- Editable summarization prompts — press `E` to open in your editor, save, and reload
 - Edit `.env` (API key, backend, model) directly from the TUI with `D` — no manual file hunting
 - Multiple prompt presets (meeting summary, lecture notes, quick recap, custom)
 - All configuration lives in plain text files — no databases, no cloud
@@ -48,7 +48,7 @@ On first run, Whisper downloads the `base` model (~142MB) to `~/.cache/huggingfa
 | `O` | Browse for an audio file (file picker) |
 | `S` | Summarize the transcript |
 | `B` | Cycle summarization backend (openrouter → ollama → llamacpp → lmstudio → local) |
-| `E` | Edit prompts in `$EDITOR` (default: vim) |
+| `E` | Edit prompts in `$EDITOR` (auto-detected: nano/vi/vim/emacs) |
 | `D` | Edit `.env` in `$EDITOR` — creates it from `.env.example` if missing |
 | `R` | Reload prompts from disk |
 | `C` | Cycle to the next prompt preset |
@@ -102,7 +102,7 @@ This is the fastest way to switch backends permanently (as opposed to `B`'s temp
 
 ## Prompt Presets
 
-Prompts live in `~/.config/transcriber/prompts.yaml` (created automatically on first run from the shipped `prompts.yaml`). Edit them in vim by pressing `E` in the TUI, or edit the file directly and press `R` to reload.
+Prompts live in `~/.config/transcriber/prompts.yaml` (created automatically on first run from the shipped `prompts.yaml`). Edit them in your editor by pressing `E` in the TUI, or edit the file directly and press `R` to reload.
 
 Built-in presets: `meeting_summary`, `lecture_notes`, `quick_recap`, and `custom` (the "edit-over-time" prompt).
 
@@ -123,7 +123,7 @@ All settings via environment or `.env`:
 | `LLAMACPP_MODEL` | *(empty)* | Local model name (llamacpp backend) |
 | `LMSTUDIO_MODEL` | *(empty)* | Local model name (lmstudio backend) |
 | `WHISPER_MODEL` | `base` | Whisper model: `tiny`, `base`, `small`, `medium`, `large-v3` |
-| `EDITOR` | `vim` | Text editor for prompt (`E`) and `.env` (`D`) editing |
+| `EDITOR` | *(auto-detected)* | Text editor for prompt (`E`) and `.env` (`D`) editing. If unset, or if it points at something not installed, falls back through `nano` → `vi` → `vim` → `emacs`, whichever is actually on PATH. |
 
 ## Architecture
 

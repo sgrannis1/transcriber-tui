@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -18,6 +19,11 @@ VALID_WHISPER_MODELS = ("tiny", "base", "small", "medium", "large-v3")
 SummarizeBackend = Literal["openrouter", "ollama", "llamacpp", "lmstudio", "local"]
 VALID_BACKENDS = ("openrouter", "ollama", "llamacpp", "lmstudio", "local")
 
+# Editors tried, in order, when $EDITOR is unset or points at something
+# that isn't actually installed. Covers the common case on minimal Linux
+# installs where vim isn't present but nano or vi (POSIX-mandated) is.
+FALLBACK_EDITORS = ("nano", "vi", "vim", "emacs")
+
 # Default base URLs for each backend.
 BACKEND_BASE_URLS: dict[str, str] = {
     "openrouter": "https://openrouter.ai/api/v1",
@@ -32,6 +38,10 @@ _BACKEND_BASE_URLS = BACKEND_BASE_URLS
 
 class ConfigError(RuntimeError):
     """Raised when configuration is missing or invalid."""
+
+
+class EditorNotFoundError(RuntimeError):
+    """Raised when no usable text editor can be found on the system."""
 
 
 @dataclass
@@ -62,6 +72,47 @@ def _find_env_file() -> Path | None:
         if cand.exists():
             return cand
     return None
+
+
+def resolve_editor() -> str:
+    """Resolve a text editor command that actually exists on this system.
+
+    A bare "vim" default (as older versions of this app used) fails with
+    a raw FileNotFoundError on any system where vim isn't installed --
+    which is common on minimal Linux setups where only nano or the
+    POSIX-mandated vi ships by default. This checks, in order:
+
+      1. $EDITOR, if set AND the command it names is actually on PATH
+         (an $EDITOR pointing at something missing is treated the same
+         as $EDITOR being unset, rather than blindly trusted)
+      2. Each name in FALLBACK_EDITORS, in order, that resolves via PATH
+      3. Raises EditorNotFoundError with actionable guidance if nothing
+         above is found, instead of letting subprocess raise a bare
+         FileNotFoundError with no context.
+
+    Only the first whitespace-separated token of $EDITOR is checked
+    against PATH (e.g. "code --wait" -> checks for "code"); the full
+    string is still what gets passed to subprocess so editor flags work.
+    """
+    editor_env = os.environ.get("EDITOR", "").strip()
+    if editor_env:
+        command = editor_env.split()[0]
+        if shutil.which(command):
+            return editor_env
+        # $EDITOR is set but not installed/found -- fall through to the
+        # fallback list rather than pass a command that will just fail.
+
+    for candidate in FALLBACK_EDITORS:
+        if shutil.which(candidate):
+            return candidate
+
+    raise EditorNotFoundError(
+        "No text editor found. None of "
+        f"{', '.join(FALLBACK_EDITORS)} are on PATH"
+        + (f", and $EDITOR='{editor_env}' is not either" if editor_env else "")
+        + ".\nInstall one (e.g. `sudo apt install nano`) or set EDITOR to "
+        "a command that exists, e.g.:\n  export EDITOR=nano"
+    )
 
 
 def resolve_env_path() -> Path:

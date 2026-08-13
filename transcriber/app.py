@@ -22,7 +22,7 @@ from textual.widgets import (
 from . import transcribe as transcribe_mod
 from . import summarize as summarize_mod
 from . import config as config_mod
-from .config import Config, ConfigError, load_config
+from .config import Config, ConfigError, EditorNotFoundError, load_config
 from .picker import FilePickerScreen
 from .prompts import PromptStore
 
@@ -246,13 +246,17 @@ class TranscriberApp(App):
         """
         if self._working:
             return
-        editor = os.environ.get("EDITOR", "vim")
+        try:
+            editor = config_mod.resolve_editor()
+        except EditorNotFoundError as exc:
+            self._status(str(exc).splitlines()[0])
+            return
         store = getattr(self, "_store", None) or PromptStore()
         store.ensure_exists()
         path = str(store.path)
 
         with self.suspend():
-            subprocess.call([editor, path])
+            subprocess.call(editor.split() + [path])
         self._on_prompts_reloaded()
 
     def action_edit_env(self) -> None:
@@ -268,11 +272,15 @@ class TranscriberApp(App):
         """
         if self._working:
             return
-        editor = os.environ.get("EDITOR", "vim")
+        try:
+            editor = config_mod.resolve_editor()
+        except EditorNotFoundError as exc:
+            self._status(str(exc).splitlines()[0])
+            return
         path = str(config_mod.resolve_env_path())
 
         with self.suspend():
-            subprocess.call([editor, path])
+            subprocess.call(editor.split() + [path])
         self._on_env_reloaded()
 
     def _on_env_reloaded(self) -> None:

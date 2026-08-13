@@ -144,11 +144,22 @@ class PromptStore:
     # ------------------------------------------------------------------
 
     def edit_with_editor(self, editor: str | None = None) -> int:
-        """Open the prompts file in $EDITOR. Returns the subprocess exit code."""
-        editor = editor or "vim"
+        """Open the prompts file in $EDITOR. Returns the subprocess exit code.
+
+        If no editor is explicitly passed, resolves one via
+        config.resolve_editor() (checks $EDITOR, falls back through
+        nano/vi/vim/emacs, whichever is actually installed) rather than
+        blindly assuming vim exists.
+        """
+        if editor is None:
+            from . import config as config_mod  # local import: avoids a
+
+            # circular import at module load time (config.py imports from
+            # this module for USER_CONFIG_DIR / USER_PROMPTS_PATH).
+            editor = config_mod.resolve_editor()
         # Textual apps should suspend before calling this; outside Textual
         # (standalone) the editor takes over the terminal directly.
-        return subprocess.call([editor, str(self.path)])
+        return subprocess.call(editor.split() + [str(self.path)])
 
     # ------------------------------------------------------------------
     # Internals
