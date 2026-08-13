@@ -24,7 +24,7 @@ async def test_bindings_registered() -> None:
     app = TranscriberApp()
     async with app.run_test(size=(100, 30)):
         names = {b.key for b in app.BINDINGS}
-        expected = {"q", "t", "s", "e", "r", "c"}
+        expected = {"q", "t", "s", "e", "r", "c", "b"}
         assert expected.issubset(names)
 
 

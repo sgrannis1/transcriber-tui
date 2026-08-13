@@ -54,6 +54,7 @@ class TranscriberApp(App):
         Binding("e", "edit_prompt", "Edit Prompt"),
         Binding("r", "reload_prompts", "Reload Prompts"),
         Binding("c", "cycle_prompt", "Cycle Prompt"),
+        Binding("b", "cycle_backend", "Cycle Backend"),
     ]
 
     def __init__(self, audio_path: str | None = None) -> None:
@@ -63,6 +64,8 @@ class TranscriberApp(App):
         self._summary_text = ""
         self._prompt_names: list[str] = []
         self._prompt_index = 0
+        self._backends = ("openrouter", "ollama", "llamacpp", "local")
+        self._backend_index = 0
         self._working = False
 
     # ------------------------------------------------------------------
@@ -180,14 +183,16 @@ class TranscriberApp(App):
         if not self._transcript_text:
             self._status("No transcript yet — press T first")
             return
-        if not getattr(self._config, "openrouter_api_key", ""):
-            self._status("Missing OPENROUTER_API_KEY — set it in .env")
+
+        cfg = self._config
+        if cfg.uses_openrouter and not cfg.openrouter_api_key:
+            self._status("Missing OPENROUTER_API_KEY — set it in .env (or cycle backend with B)")
             return
 
         prompt = self._current_prompt()
         self._summary_text = ""
         self.query_one("#summary-area", TextArea).text = ""
-        self._status("Summarizing ...")
+        self._status(f"Summarizing via {cfg.summarize_backend} ({cfg.summarize_model}) ...")
         self._loading(True, "Summarizing ...")
         self.run_worker(self._do_summarize(prompt), exclusive=True)
 
@@ -242,6 +247,25 @@ class TranscriberApp(App):
         self._prompt_index = (self._prompt_index + 1) % len(self._prompt_names)
         self._update_meta()
         self._status(f"Prompt: {self._prompt_names[self._prompt_index]}")
+
+    def action_cycle_backend(self) -> None:
+        """Cycle through: openrouter → ollama → llamacpp → local → openrouter ..."""
+        from .config import VALID_BACKENDS, _BACKEND_BASE_URLS
+
+        self._backend_index = (self._backend_index + 1) % len(self._backends)
+        backend = self._backends[self._backend_index]
+        self._config.summarize_backend = backend
+        self._config.summarize_base_url = _BACKEND_BASE_URLS.get(backend, "")
+        # Set a sensible default model for each backend.
+        defaults = {
+            "openrouter": "deepseek/deepseek-v4-flash-0731",
+            "ollama": "hermes-qwen35b:latest",
+            "llamacpp": "",
+            "local": "",
+        }
+        self._config.summarize_model = defaults.get(backend, "")
+        self._update_meta()
+        self._status(f"Backend: {backend}" + (f" ({self._config.summarize_model})" if self._config.summarize_model else ""))
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "transcribe-btn":

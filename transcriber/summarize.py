@@ -1,33 +1,43 @@
-"""LLM summarization via OpenRouter (streaming)."""
+"""LLM summarization — OpenRouter + local backends (streaming)."""
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
 import httpx
 
-BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
+# OpenRouter default (used when no explicit base_url is given).
+_DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 
 
 class SummarizationError(RuntimeError):
-    """Raised when the OpenRouter call fails."""
+    """Raised when the summarization call fails."""
+
+
+def _build_headers(api_key: str) -> dict[str, str]:
+    """Build request headers. Skips Authorization for local backends (empty key)."""
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    return headers
 
 
 async def summarize(
     transcript: str,
     prompt: str,
     model: str,
-    api_key: str,
+    api_key: str = "",
+    base_url: str = "",
     temperature: float = 0.3,
 ) -> AsyncIterator[str]:
-    """Stream a summary from OpenRouter, yielding content chunks.
+    """Stream a summary, yielding content chunks.
 
-    Falls back to a single non-streaming request if streaming is rejected
-    or fails mid-stream.
+    Works with OpenRouter, Ollama, llama.cpp server, LM Studio, and any
+    OpenAI-compatible endpoint.  Leave *api_key* empty for local backends
+    that don't require authentication.
     """
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
+    base_url = base_url or _DEFAULT_BASE_URL
+    url = f"{base_url}/chat/completions"
+    headers = _build_headers(api_key)
     body = {
         "model": model,
         "messages": [
@@ -38,13 +48,13 @@ async def summarize(
         "stream": True,
     }
 
-    async with httpx.AsyncClient(timeout=120.0) as client:
+    async with httpx.AsyncClient(timeout=300.0) as client:
         try:
-            async with client.stream("POST", BASE_URL, headers=headers, json=body) as resp:
+            async with client.stream("POST", url, headers=headers, json=body) as resp:
                 if resp.status_code != 200:
                     text = await resp.aread()
                     raise SummarizationError(
-                        f"OpenRouter HTTP {resp.status_code}: {text[:300]!r}"
+                        f"HTTP {resp.status_code}: {text[:300]!r}"
                     )
                 yielded = False
                 async for line in resp.aiter_lines():
@@ -69,15 +79,13 @@ async def summarize(
                         yielded = True
                         yield content
                 if not yielded:
-                    # Streaming produced no tokens; fall back to non-streaming.
                     async for piece in _summarize_once(
-                        transcript, prompt, model, api_key, temperature
+                        transcript, prompt, model, api_key, base_url, temperature
                     ):
                         yield piece
         except (httpx.HTTPError, SummarizationError):
-            # Fall back to a single-shot request on any transport failure.
             async for piece in _summarize_once(
-                transcript, prompt, model, api_key, temperature
+                transcript, prompt, model, api_key, base_url, temperature
             ):
                 yield piece
 
@@ -87,13 +95,12 @@ async def _summarize_once(
     prompt: str,
     model: str,
     api_key: str,
+    base_url: str,
     temperature: float,
 ) -> AsyncIterator[str]:
-    """Single non-streaming request; yields the full content as one chunk."""
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
+    """Single non-streaming request; yields full content as one chunk."""
+    url = f"{base_url}/chat/completions"
+    headers = _build_headers(api_key)
     body = {
         "model": model,
         "messages": [
@@ -103,11 +110,11 @@ async def _summarize_once(
         "temperature": temperature,
         "stream": False,
     }
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        resp = await client.post(BASE_URL, headers=headers, json=body)
+    async with httpx.AsyncClient(timeout=300.0) as client:
+        resp = await client.post(url, headers=headers, json=body)
         if resp.status_code != 200:
             raise SummarizationError(
-                f"OpenRouter HTTP {resp.status_code}: {resp.text[:300]!r}"
+                f"HTTP {resp.status_code}: {resp.text[:300]!r}"
             )
         data = resp.json()
         content = data["choices"][0]["message"]["content"]
@@ -119,11 +126,12 @@ async def summarize_text(
     transcript: str,
     prompt: str,
     model: str,
-    api_key: str,
+    api_key: str = "",
+    base_url: str = "",
     temperature: float = 0.3,
 ) -> str:
     """Convenience: gather the streamed summary into a single string."""
     chunks: list[str] = []
-    async for chunk in summarize(transcript, prompt, model, api_key, temperature):
+    async for chunk in summarize(transcript, prompt, model, api_key, base_url, temperature):
         chunks.append(chunk)
     return "".join(chunks)
