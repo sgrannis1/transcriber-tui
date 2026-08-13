@@ -55,3 +55,88 @@ async def test_picker_screen_composes() -> None:
         await pilot.pause(0.1)
         assert screen.query_one("#picker-tree") is not None
         assert screen.query_one("#picker-title") is not None
+
+
+@pytest.mark.asyncio
+async def test_go_up_reroots_to_parent_directory() -> None:
+    """Regression: browsing must not be stuck at the starting directory.
+
+    Pressing Backspace/U/- should re-root the DirectoryTree one level up
+    from wherever the user started, not just from home.
+    """
+    from textual.app import App
+    from transcriber.picker import AudioFileTree
+
+    class HostApp(App):
+        def compose(self):
+            return ()
+
+    start = Path.home()
+    expected_parent = start.parent
+
+    app = HostApp()
+    async with app.run_test(size=(100, 30)) as pilot:
+        screen = FilePickerScreen(start)
+        await pilot.app.push_screen(screen)
+        await pilot.pause(0.1)
+
+        tree = screen.query_one("#picker-tree", AudioFileTree)
+        assert Path(tree.path) == start
+
+        screen.action_go_up()
+        await pilot.pause(0.1)
+        assert Path(tree.path) == expected_parent
+
+
+@pytest.mark.asyncio
+async def test_go_up_at_filesystem_root_is_a_noop() -> None:
+    """Regression: must not error or loop when already at the root."""
+    from textual.app import App
+    from transcriber.picker import AudioFileTree
+
+    class HostApp(App):
+        def compose(self):
+            return ()
+
+    app = HostApp()
+    async with app.run_test(size=(100, 30)) as pilot:
+        screen = FilePickerScreen("/")
+        await pilot.app.push_screen(screen)
+        await pilot.pause(0.1)
+
+        tree = screen.query_one("#picker-tree", AudioFileTree)
+        assert Path(tree.path) == Path("/")
+
+        screen.action_go_up()  # should not raise, should stay at "/"
+        await pilot.pause(0.1)
+        assert Path(tree.path) == Path("/")
+
+
+@pytest.mark.asyncio
+async def test_go_home_and_go_root() -> None:
+    """H jumps to $HOME, G jumps to the filesystem root, from anywhere."""
+    from textual.app import App
+    from transcriber.picker import AudioFileTree
+
+    class HostApp(App):
+        def compose(self):
+            return ()
+
+    app = HostApp()
+    async with app.run_test(size=(100, 30)) as pilot:
+        screen = FilePickerScreen(Path.home())
+        await pilot.app.push_screen(screen)
+        await pilot.pause(0.1)
+        tree = screen.query_one("#picker-tree", AudioFileTree)
+
+        screen.action_go_up()
+        await pilot.pause(0.1)
+        assert Path(tree.path) != Path.home()
+
+        screen.action_go_home()
+        await pilot.pause(0.1)
+        assert Path(tree.path) == Path.home()
+
+        screen.action_go_root()
+        await pilot.pause(0.1)
+        assert str(tree.path) == "/"

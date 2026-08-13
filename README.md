@@ -7,7 +7,7 @@ A Textual TUI that transcribes audio files with local [faster-whisper](https://g
 ## Features
 
 - Transcribe any audio file with local Whisper (225x realtime on CPU with the `base` model)
-- Built-in file browser — launch with no args and navigate to your audio in the TUI
+- Built-in file browser — launch with no args and navigate freely up and down the filesystem in the TUI (not restricted to any starting directory)
 - Summarize with **OpenRouter** (cloud) or **local models** via Ollama / llama.cpp / LM Studio / any OpenAI-compatible endpoint
 - Stream summaries from an LLM with live token display
 - Cycle backends at runtime with `B` — switch between cloud and local models without restarting
@@ -53,6 +53,21 @@ On first run, Whisper downloads the `base` model (~142MB) to `~/.cache/huggingfa
 | `R` | Reload prompts from disk |
 | `C` | Cycle to the next prompt preset |
 | `Q` | Quit |
+
+## Browsing for a File
+
+Press `O` (or click Browse) to open the file picker. It starts at your home directory but is not restricted to it — you can navigate anywhere on the filesystem the process can read:
+
+| Key | Action |
+|-----|--------|
+| `Enter` / click | Open a folder, or select a file |
+| `Backspace` / `U` / `-` | Go up one directory (re-roots the tree at the parent) |
+| `H` | Jump straight to your home directory |
+| `G` | Jump straight to the filesystem root (`/`) |
+| `↑` `↓` | Move the cursor within the current directory listing |
+| `Esc` | Cancel and close the picker |
+
+The current directory is shown at the top of the picker so you always know where you are. Only directories and recognized audio/video files are listed — everything else is filtered out.
 
 ## Summarization Backends
 
@@ -116,7 +131,7 @@ All settings via environment or `.env`:
 transcriber/
 ├── app.py          # Textual TUI (layout, bindings, worker flows)
 ├── config.py       # .env loading, backends, Config dataclass
-├── picker.py       # Modal file picker with filtered DirectoryTree
+├── picker.py       # Modal file picker: filtered DirectoryTree + free up/down/home/root navigation
 ├── prompts.py      # PromptStore — YAML load/save/reload
 ├── transcribe.py   # faster-whisper wrapper (thread-safe model cache)
 ├── summarize.py    # multi-backend streaming summarization (OpenRouter/Ollama/llama.cpp/LM Studio)

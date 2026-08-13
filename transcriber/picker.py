@@ -28,7 +28,13 @@ class AudioFileTree(DirectoryTree):
 
 
 class FilePickerScreen(ModalScreen[Path | None]):
-    """Modal screen for picking an audio file via a directory tree."""
+    """Modal screen for picking an audio file via a directory tree.
+
+    Free navigation up and down the filesystem: the DirectoryTree's
+    reactive .path is re-rooted on "go up" (Backspace/U/-), and expanding
+    a folder (Enter/click) descends normally via the tree's own behavior.
+    Not limited to the starting directory or the home directory.
+    """
 
     CSS = """
     FilePickerScreen {
@@ -47,6 +53,12 @@ class FilePickerScreen(ModalScreen[Path | None]):
         color: $text;
         text-style: bold;
     }
+    #picker-path {
+        height: 1;
+        padding: 0 1;
+        color: $accent;
+        text-style: bold;
+    }
     #picker-hint {
         height: 1;
         padding: 0 1;
@@ -58,17 +70,26 @@ class FilePickerScreen(ModalScreen[Path | None]):
     }
     """
 
-    BINDINGS = [("escape", "cancel", "Cancel")]
+    BINDINGS = [
+        ("escape", "cancel", "Cancel"),
+        ("backspace", "go_up", "Up a directory"),
+        ("u", "go_up", "Up a directory"),
+        ("minus", "go_up", "Up a directory"),
+        ("h", "go_home", "Home"),
+        ("g", "go_root", "Filesystem root (/)"),
+    ]
 
     def __init__(self, start_path: str | Path = "~") -> None:
         super().__init__()
-        self._start_path = Path(start_path).expanduser()
+        self._start_path = Path(start_path).expanduser().resolve()
 
     def compose(self) -> ComposeResult:
         with Vertical(id="picker-dialog"):
             yield Static("Select an audio file", id="picker-title")
+            yield Static(str(self._start_path), id="picker-path")
             yield Static(
-                "Arrow keys to navigate, Enter to open/select, Esc to cancel",
+                "Enter: open/select   Backspace/U/-: up a directory   "
+                "H: home   G: filesystem root   Esc: cancel",
                 id="picker-hint",
             )
             yield AudioFileTree(self._start_path, id="picker-tree")
@@ -79,5 +100,36 @@ class FilePickerScreen(ModalScreen[Path | None]):
         """A file was chosen — return its path."""
         self.dismiss(event.path)
 
+    def on_directory_tree_directory_selected(
+        self, event: DirectoryTree.DirectorySelected
+    ) -> None:
+        """Keep the visible current-path label in sync as the user browses."""
+        self._update_path_label()
+
     def action_cancel(self) -> None:
         self.dismiss(None)
+
+    def action_go_up(self) -> None:
+        """Re-root the tree one level up (unless already at the filesystem root)."""
+        tree = self.query_one("#picker-tree", AudioFileTree)
+        parent = tree.path.parent if isinstance(tree.path, Path) else Path(tree.path).parent
+        if parent == tree.path:
+            return  # already at filesystem root
+        tree.path = parent
+        self._update_path_label()
+
+    def action_go_home(self) -> None:
+        """Jump straight back to the user's home directory."""
+        tree = self.query_one("#picker-tree", AudioFileTree)
+        tree.path = Path.home()
+        self._update_path_label()
+
+    def action_go_root(self) -> None:
+        """Jump straight to the filesystem root."""
+        tree = self.query_one("#picker-tree", AudioFileTree)
+        tree.path = Path(tree.path).anchor or "/"
+        self._update_path_label()
+
+    def _update_path_label(self) -> None:
+        tree = self.query_one("#picker-tree", AudioFileTree)
+        self.query_one("#picker-path", Static).update(str(tree.path))
