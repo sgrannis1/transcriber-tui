@@ -168,7 +168,9 @@ class TranscriberApp(App):
 
         self._status(f"Transcribing {os.path.basename(path)} ...")
         self._loading(True, "Transcribing ...")
-        self.run_worker(self._do_transcribe(path), thread=True, exclusive=True)
+        self.run_worker(
+            lambda: self._do_transcribe(path), thread=True, exclusive=True
+        )
 
     def _do_transcribe(self, path: str) -> None:
         """Runs in a worker thread (CPU-bound Whisper)."""
@@ -234,7 +236,14 @@ class TranscriberApp(App):
         self._status(f"Summary complete ({len(self._summary_text)} chars)")
 
     def action_edit_prompt(self) -> None:
-        """Open the prompts file in $EDITOR, suspending the TUI meanwhile."""
+        """Open the prompts file in $EDITOR, suspending the TUI meanwhile.
+
+        Called directly (not via run_worker) because suspend() hands the
+        terminal to the external editor and blocks until it exits — it is
+        meant to run synchronously on the main thread, per Textual's own
+        docs. Wrapping it in a worker thread would race the suspend/resume
+        of driver state against the main event loop for no benefit.
+        """
         if self._working:
             return
         editor = os.environ.get("EDITOR", "vim")
@@ -242,13 +251,9 @@ class TranscriberApp(App):
         store.ensure_exists()
         path = str(store.path)
 
-        self.run_worker(self._edit_in_editor(editor, path), exclusive=True)
-
-    def _edit_in_editor(self, editor: str, path: str) -> None:
         with self.suspend():
             subprocess.call([editor, path])
-        # Reload prompts after the editor closes.
-        self.call_from_thread(self._on_prompts_reloaded)
+        self._on_prompts_reloaded()
 
     def action_edit_env(self) -> None:
         """Open .env in $EDITOR, suspending the TUI meanwhile.
@@ -256,17 +261,19 @@ class TranscriberApp(App):
         Creates .env (seeded from .env.example) if none exists yet, so
         first-time setup — including OPENROUTER_API_KEY — never requires
         leaving the TUI.
+
+        Called directly (not via run_worker) for the same reason as
+        action_edit_prompt: suspend() is meant to run synchronously on the
+        main thread while it hands the terminal to the external editor.
         """
         if self._working:
             return
         editor = os.environ.get("EDITOR", "vim")
         path = str(config_mod.resolve_env_path())
-        self.run_worker(self._edit_env_in_editor(editor, path), exclusive=True)
 
-    def _edit_env_in_editor(self, editor: str, path: str) -> None:
         with self.suspend():
             subprocess.call([editor, path])
-        self.call_from_thread(self._on_env_reloaded)
+        self._on_env_reloaded()
 
     def _on_env_reloaded(self) -> None:
         """Re-read .env after the editor closes and apply it live."""
