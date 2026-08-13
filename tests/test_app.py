@@ -89,7 +89,9 @@ async def test_cycle_backend_updates_model_and_base_url() -> None:
     """
     app = TranscriberApp()
     async with app.run_test(size=(100, 30)) as pilot:
-        assert app._config.summarize_backend == "openrouter"
+        # Normalize to a known starting point — the real .env may
+        # configure any backend, so don't depend on its value.
+        app._backend_index = app._backends.index("openrouter")
         app.action_cycle_backend()
         await pilot.pause(0.05)
         assert app._config.summarize_backend == "ollama"
@@ -116,9 +118,10 @@ async def test_on_env_reloaded_applies_new_config(monkeypatch, tmp_path) -> None
 
     app = TranscriberApp()
     async with app.run_test(size=(100, 30)):
-        assert app._config.summarize_backend == "openrouter"  # pre-edit default
+        old_backend = app._config.summarize_backend  # depends on real .env
         app._on_env_reloaded()
         assert app._config.summarize_backend == "ollama"
+        assert app._config.summarize_backend != old_backend
         assert app._config.summarize_model == "test-model:latest"
 
 

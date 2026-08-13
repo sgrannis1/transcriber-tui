@@ -111,6 +111,14 @@ class TranscriberApp(App):
             self._config = Config()
             return
 
+        # Keep the B-key cycle index in sync with the backend loaded from
+        # .env, so pressing B advances from the *actual* current backend
+        # rather than always assuming it started on openrouter.
+        if self._config.summarize_backend in self._backends:
+            self._backend_index = self._backends.index(
+                self._config.summarize_backend
+            )
+
         self._store = PromptStore()
         try:
             self._store.load()
@@ -224,7 +232,7 @@ class TranscriberApp(App):
         self.run_worker(self._do_summarize(prompt), exclusive=True)
 
     async def _do_summarize(self, prompt: str) -> None:
-        """Streams summary chunks into the TextArea (async)."""
+        """Streams summary chunks into the TextArea (async), then auto-exports."""
         cfg = self._config
         try:
             async for chunk in summarize_mod.summarize(
@@ -240,8 +248,38 @@ class TranscriberApp(App):
             self._status(f"Summarization failed: {exc}")
             self._loading(False)
             return
+
+        # Auto-export markdown after summarization completes.
+        audio_path = self.query_one("#file-input", Input).value.strip()
+        prompt_name = (
+            self._prompt_names[self._prompt_index] if self._prompt_names else ""
+        )
+        content = export_mod.build_markdown(
+            audio_path=audio_path,
+            transcript_text=self._transcript_text,
+            summary_text=self._summary_text,
+            prompt_name=prompt_name,
+            backend=cfg.summarize_backend,
+            model=cfg.summarize_model,
+            whisper_model=cfg.whisper_model,
+        )
+        export_dir = getattr(cfg, "export_dir", "") or None
+        target = export_mod.default_export_path(audio_path, export_dir)
+        try:
+            saved_path = export_mod.save_markdown(content, target)
+        except OSError as exc:
+            self._loading(False)
+            self._status(
+                f"Summary complete ({len(self._summary_text)} chars) "
+                f"but export failed: {exc} (press X to retry)"
+            )
+            return
+
         self._loading(False)
-        self._status(f"Summary complete ({len(self._summary_text)} chars)")
+        self._status(
+            f"Summary complete ({len(self._summary_text)} chars) "
+            f"— exported to {saved_path}"
+        )
 
     def action_edit_prompt(self) -> None:
         """Open the prompts file in $EDITOR, suspending the TUI meanwhile.
@@ -339,10 +377,11 @@ class TranscriberApp(App):
         -> lmstudio -> local -> openrouter ...
 
         Resets summarize_model to a sensible per-backend default. For
-        llamacpp/lmstudio/local there is no universal default model name,
-        so the model field is cleared — set SUMMARIZE_MODEL (or the
-        backend-specific *_MODEL env var) in .env, or the status bar will
-        show "(?)" until you configure one.
+        llamacpp/lmstudio/local there is no universal default model name;
+        for lmstudio the loaded model is auto-detected from the server's
+        /v1/models endpoint when possible. Otherwise set SUMMARIZE_MODEL
+        (or the backend-specific *_MODEL env var) in .env, and the status
+        bar will show "(?)" until you configure one.
         """
         self._backend_index = (self._backend_index + 1) % len(self._backends)
         backend = self._backends[self._backend_index]
@@ -356,9 +395,40 @@ class TranscriberApp(App):
             "lmstudio": "",
             "local": "",
         }
-        self._config.summarize_model = defaults.get(backend, "")
+        model = defaults.get(backend, "")
+
+        # Auto-detect the loaded model for LM Studio so the field isn't blank.
+        if backend == "lmstudio" and not model:
+            detected = self._detect_lmstudio_model()
+            if detected:
+                model = detected
+
+        self._config.summarize_model = model
         self._update_meta()
-        self._status(f"Backend: {backend}" + (f" ({self._config.summarize_model})" if self._config.summarize_model else ""))
+        self._status(f"Backend: {backend}" + (f" ({model})" if model else ""))
+
+    @staticmethod
+    def _detect_lmstudio_model() -> str:
+        """Query LM Studio's /v1/models endpoint for the loaded model name.
+
+        Returns the first non-embedding model id, or "" if the server
+        isn't reachable or returns nothing. Best-effort: failures leave
+        the model field empty rather than blocking the backend switch.
+        """
+        import httpx
+
+        try:
+            resp = httpx.get("http://localhost:1234/v1/models", timeout=3.0)
+            if resp.status_code != 200:
+                return ""
+            data = resp.json()
+            for item in data.get("data", []):
+                model_id = item.get("id", "")
+                if model_id and "embed" not in model_id.lower():
+                    return model_id
+        except Exception:  # noqa: BLE001 — best-effort detection
+            return ""
+        return ""
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "transcribe-btn":
