@@ -160,8 +160,8 @@ async def test_default_prompt_is_meeting_summary_on_fresh_install(
     """
     from transcriber import prompts as prompts_mod
 
-    fake_prompts_path = tmp_path / "prompts.yaml"
-    monkeypatch.setattr(prompts_mod, "USER_PROMPTS_PATH", fake_prompts_path)
+    fake_prompts_dir = tmp_path / "prompts"
+    monkeypatch.setattr(prompts_mod, "USER_PROMPTS_DIR", fake_prompts_dir)
     monkeypatch.setattr(
         prompts_mod, "LAST_PROMPT_PATH", tmp_path / "last_prompt.txt"
     )
@@ -176,20 +176,18 @@ async def test_default_prompt_is_meeting_summary_on_fresh_install(
 async def test_action_edit_prompt_reloads_from_disk_after_editor_closes(
     monkeypatch, tmp_path
 ) -> None:
-    """Regression: pressing E, editing prompts.yaml, and closing the
-    editor must actually re-read the file from disk before showing
-    "Prompts reloaded" -- previously it called _on_prompts_reloaded()
-    directly without ever calling store.reload(), so the in-memory
-    prompts (and therefore what S actually sends the LLM) silently kept
-    using the pre-edit text until the user separately pressed R.
+    """Regression: pressing E on a prompt, editing its .md file, and
+    closing the editor must actually re-read the file from disk.  With
+    the file-per-prompt layout, E edits the *currently selected*
+    prompt's individual file, and the reload picks up the change.
     """
     from contextlib import contextmanager
     from unittest.mock import patch
 
     from transcriber import prompts as prompts_mod
 
-    fake_prompts_path = tmp_path / "prompts.yaml"
-    monkeypatch.setattr(prompts_mod, "USER_PROMPTS_PATH", fake_prompts_path)
+    fake_prompts_dir = tmp_path / "prompts"
+    monkeypatch.setattr(prompts_mod, "USER_PROMPTS_DIR", fake_prompts_dir)
     monkeypatch.setattr(
         prompts_mod, "LAST_PROMPT_PATH", tmp_path / "last_prompt.txt"
     )
@@ -198,6 +196,13 @@ async def test_action_edit_prompt_reloads_from_disk_after_editor_closes(
     app = TranscriberApp()
     async with app.run_test(size=(100, 30)) as pilot:
         await pilot.pause(0.1)
+
+        # Make "custom" the active prompt so E opens custom.md.
+        app._prompt_names = [n for n in app._prompt_names if n == "custom"] or [
+            "custom"
+        ]
+        app._prompt_index = app._prompt_names.index("custom")
+
         original = app._store.get("custom")
         assert original != "EDITED BY TEST"
 
@@ -206,12 +211,9 @@ async def test_action_edit_prompt_reloads_from_disk_after_editor_closes(
             yield
 
         def fake_subprocess_call(cmd):
-            # Simulate the external editor changing the file on disk.
-            data = app._store.prompts.copy()
-            data["custom"] = "EDITED BY TEST"
-            fake_prompts_path.write_text(
-                __import__("yaml").safe_dump(data), encoding="utf-8"
-            )
+            # Simulate the external editor writing to the individual file.
+            prompt_file = app._store.file_for("custom")
+            prompt_file.write_text("EDITED BY TEST", encoding="utf-8")
             return 0
 
         with patch.object(app, "suspend", fake_suspend), patch(

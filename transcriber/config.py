@@ -9,7 +9,7 @@ from typing import Literal
 
 from dotenv import load_dotenv
 
-from .prompts import USER_CONFIG_DIR, USER_PROMPTS_PATH
+from .prompts import USER_CONFIG_DIR, USER_PROMPTS_DIR
 
 DEFAULT_OPENROUTER_MODEL = "deepseek/deepseek-v4-flash-0731"
 DEFAULT_WHISPER_MODEL = "base"
@@ -68,7 +68,7 @@ class Config:
     whisper_model: str = DEFAULT_WHISPER_MODEL
     export_dir: str = ""
     config_dir: Path = field(default_factory=lambda: USER_CONFIG_DIR)
-    prompts_path: Path = field(default_factory=lambda: USER_PROMPTS_PATH)
+    prompts_dir: Path = field(default_factory=lambda: USER_PROMPTS_DIR)
 
     @property
     def uses_openrouter(self) -> bool:

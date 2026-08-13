@@ -282,7 +282,7 @@ class TranscriberApp(App):
         )
 
     def action_edit_prompt(self) -> None:
-        """Open the prompts file in $EDITOR, suspending the TUI meanwhile.
+        """Open the current prompt's .md file in $EDITOR, suspending the TUI.
 
         Called directly (not via run_worker) because suspend() hands the
         terminal to the external editor and blocks until it exits — it is
@@ -297,9 +297,14 @@ class TranscriberApp(App):
         except EditorNotFoundError as exc:
             self._status(str(exc).splitlines()[0])
             return
+
+        # Edit the *currently selected* prompt's individual file.
         store = getattr(self, "_store", None) or PromptStore()
         store.ensure_exists()
-        path = str(store.path)
+        if not self._prompt_names:
+            return
+        name = self._prompt_names[self._prompt_index]
+        path = str(store.file_for(name))
 
         with self.suspend():
             subprocess.call(editor.split() + [path])
