@@ -24,7 +24,7 @@ from . import summarize as summarize_mod
 from . import config as config_mod
 from .config import Config, ConfigError, EditorNotFoundError, load_config
 from .picker import FilePickerScreen
-from .prompts import PromptStore
+from .prompts import PromptsError, PromptStore
 
 
 class TranscriberApp(App):
@@ -107,7 +107,10 @@ class TranscriberApp(App):
             return
 
         self._store = PromptStore()
-        self._store.load()
+        try:
+            self._store.load()
+        except PromptsError as exc:
+            self._status(str(exc).splitlines()[0])
         self._refresh_prompt_names()
         self._update_meta()
 
@@ -257,6 +260,11 @@ class TranscriberApp(App):
 
         with self.suspend():
             subprocess.call(editor.split() + [path])
+        try:
+            store.reload()
+        except PromptsError as exc:
+            self._status(str(exc).splitlines()[0])
+            return
         self._on_prompts_reloaded()
 
     def action_edit_env(self) -> None:
@@ -298,7 +306,11 @@ class TranscriberApp(App):
 
     def action_reload_prompts(self) -> None:
         store = getattr(self, "_store", None) or PromptStore()
-        store.reload()
+        try:
+            store.reload()
+        except PromptsError as exc:
+            self._status(str(exc).splitlines()[0])
+            return
         self._on_prompts_reloaded()
 
     def _on_prompts_reloaded(self) -> None:

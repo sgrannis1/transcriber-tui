@@ -102,11 +102,15 @@ This is the fastest way to switch backends permanently (as opposed to `B`'s temp
 
 ## Prompt Presets
 
-Prompts live in `~/.config/transcriber/prompts.yaml` (created automatically on first run from the shipped `prompts.yaml`). Edit them in your editor by pressing `E` in the TUI, or edit the file directly and press `R` to reload.
+Prompts live in **`~/.config/transcriber/prompts.yaml`** — this is the only file the running app ever reads from or writes to. There is a second `prompts.yaml` at the root of this repo, but that one is just the shipped *template*: it gets copied to the live location once, the very first time the app runs on a machine with no live file yet, and is never read again after that. Editing the repo copy directly has no effect once the live file exists — always use `E` in the TUI (or edit `~/.config/transcriber/prompts.yaml` directly, then `R` to reload) to change what the app actually uses.
+
+Edit prompts in your editor by pressing `E` in the TUI (this now correctly reloads the file from disk when the editor closes), or edit `~/.config/transcriber/prompts.yaml` directly and press `R` to reload.
 
 Built-in presets: `meeting_summary`, `lecture_notes`, `quick_recap`, and `custom` (the "edit-over-time" prompt).
 
 **`meeting_summary` is active by default** on a fresh install — the TUI does not simply pick presets alphabetically (which would default to `custom`, a placeholder with no real instructions). Press `C` to cycle to a different preset; whichever one you land on is remembered in `~/.config/transcriber/last_prompt.txt` and stays active across restarts until you cycle again.
+
+**Quoting in prompt text:** `prompts.yaml` values are YAML double-quoted strings. If your prompt text itself contains a `"` character (common in natural-language instructions, e.g. mentioning `"said"` vs `"sad"`), you must escape it as `\"` or the file becomes invalid YAML. The app catches this and shows a clear error in the status bar instead of crashing, but the safest fix is to write the prompt without straight quotes (use `'single quotes'` or no quotes at all in the prose) or switch that one value to YAML's block-literal style (`|` or `>`) which doesn't need escaping.
 
 ## Configuration
 
@@ -146,6 +150,10 @@ Transcription runs in a worker thread (CPU-bound), summarization runs as an asyn
 **`Summarization failed: HTTP 401: "Missing Authentication header"`** — `OPENROUTER_API_KEY` in `.env` is not a valid OpenRouter key. The most common cause is pasting a key from a different provider by mistake (OpenAI keys start with `sk-proj-`, Anthropic with `sk-ant-`; OpenRouter keys start with `sk-or-`). The app checks this at startup and shows a specific error for known cases, but if you edited `.env` mid-session, press `D` to fix it — the config reloads immediately, no restart needed. Get a real key at https://openrouter.ai/keys.
 
 **`FileNotFoundError` on `E` or `D`** — fixed in current versions; `$EDITOR` is auto-detected with a fallback chain (`nano`/`vi`/`vim`/`emacs`) rather than assuming `vim` is installed. Pull the latest if you still see this.
+
+**"I edited prompts.yaml but the TUI still uses the old text"** — you likely edited the repo's `prompts.yaml` (the shipped template) instead of `~/.config/transcriber/prompts.yaml` (the live file the app actually reads). See [Prompt Presets](#prompt-presets) above. Copy your edits into the live file, or better, use `E` in the TUI going forward so this can't happen.
+
+**`prompts.yaml has invalid YAML and could not be reloaded`** — a `"` character inside your prompt text broke the YAML double-quoted string it lives in. See the quoting note under [Prompt Presets](#prompt-presets). The app keeps using the last successfully-loaded prompts rather than crashing, so fix the file and press `R` (or `E` again) once it's valid.
 
 ## License
 

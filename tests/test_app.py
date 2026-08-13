@@ -165,3 +165,54 @@ async def test_default_prompt_is_meeting_summary_on_fresh_install(
     async with app.run_test(size=(100, 30)):
         assert "meeting_summary" in app._prompt_names
         assert app._prompt_names[app._prompt_index] == "meeting_summary"
+
+
+@pytest.mark.asyncio
+async def test_action_edit_prompt_reloads_from_disk_after_editor_closes(
+    monkeypatch, tmp_path
+) -> None:
+    """Regression: pressing E, editing prompts.yaml, and closing the
+    editor must actually re-read the file from disk before showing
+    "Prompts reloaded" -- previously it called _on_prompts_reloaded()
+    directly without ever calling store.reload(), so the in-memory
+    prompts (and therefore what S actually sends the LLM) silently kept
+    using the pre-edit text until the user separately pressed R.
+    """
+    from contextlib import contextmanager
+    from unittest.mock import patch
+
+    from transcriber import prompts as prompts_mod
+
+    fake_prompts_path = tmp_path / "prompts.yaml"
+    monkeypatch.setattr(prompts_mod, "USER_PROMPTS_PATH", fake_prompts_path)
+    monkeypatch.setattr(
+        prompts_mod, "LAST_PROMPT_PATH", tmp_path / "last_prompt.txt"
+    )
+    monkeypatch.delenv("EDITOR", raising=False)
+
+    app = TranscriberApp()
+    async with app.run_test(size=(100, 30)) as pilot:
+        await pilot.pause(0.1)
+        original = app._store.get("custom")
+        assert original != "EDITED BY TEST"
+
+        @contextmanager
+        def fake_suspend():
+            yield
+
+        def fake_subprocess_call(cmd):
+            # Simulate the external editor changing the file on disk.
+            data = app._store.prompts.copy()
+            data["custom"] = "EDITED BY TEST"
+            fake_prompts_path.write_text(
+                __import__("yaml").safe_dump(data), encoding="utf-8"
+            )
+            return 0
+
+        with patch.object(app, "suspend", fake_suspend), patch(
+            "transcriber.app.subprocess.call", side_effect=fake_subprocess_call
+        ):
+            app.action_edit_prompt()
+            await pilot.pause(0.1)
+
+        assert app._store.get("custom") == "EDITED BY TEST"

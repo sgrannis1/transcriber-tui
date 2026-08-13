@@ -12,6 +12,11 @@ from typing import Any
 
 import yaml
 
+
+class PromptsError(RuntimeError):
+    """Raised when the prompts file exists but cannot be parsed."""
+
+
 # Default prompts shipped in the repo; copied to user config on first run.
 SHIPPED_PROMPTS_PATH = Path(__file__).resolve().parent.parent / "prompts.yaml"
 
@@ -72,10 +77,35 @@ class PromptStore:
         self.prompts = dict(_DEFAULTS)  # seed in-memory copy
 
     def load(self) -> dict[str, str]:
-        """Load prompts from disk. If the file is missing, create it first."""
+        """Load prompts from disk. If the file is missing, create it first.
+
+        If the file exists but is malformed YAML (e.g. unescaped quote
+        characters inside a double-quoted scalar -- an easy mistake when
+        hand-editing a prompt full of natural-language text with quotes
+        in it), this does NOT crash. It raises PromptsError with the
+        parser's own message so the caller can show something actionable
+        in the status bar, and falls back to whatever prompts were
+        already loaded in memory (or the built-in defaults on first
+        load) so the TUI stays usable instead of failing to start.
+        """
         self.ensure_exists()
-        with open(self.path, encoding="utf-8") as fh:
-            raw = yaml.safe_load(fh) or {}
+        try:
+            with open(self.path, encoding="utf-8") as fh:
+                raw = yaml.safe_load(fh) or {}
+        except yaml.YAMLError as exc:
+            # Keep whatever prompts were already loaded (don't wipe out a
+            # previously-good in-memory state just because the file on
+            # disk is now broken); fall back to defaults only if this is
+            # the very first load and nothing else exists yet.
+            if not self.prompts:
+                self.prompts = dict(_DEFAULTS)
+            raise PromptsError(
+                f"{self.path} has invalid YAML and could not be reloaded:\n"
+                f"{exc}\n\n"
+                "Common cause: a double quote (\") inside a prompt's text "
+                "without escaping it as \\\". Continuing with the "
+                "previously loaded prompts."
+            ) from exc
         # Coerce values to strings (safe_load may leave them as Any).
         self.prompts = {str(k): str(v) for k, v in raw.items() if v}
         if not self.prompts:

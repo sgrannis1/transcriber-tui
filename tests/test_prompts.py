@@ -4,9 +4,10 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
+import pytest
 import yaml
 
-from transcriber.prompts import PromptStore
+from transcriber.prompts import PromptsError, PromptStore
 
 
 def test_ensure_exists_creates_defaults(tmp_path: Path) -> None:
@@ -110,3 +111,56 @@ def test_active_name_returns_first(tmp_path: Path) -> None:
     store.save({"b": "2", "a": "1"})
     store.reload()
     assert store.active_name() == "a"
+
+
+def test_load_malformed_yaml_raises_promptserror_not_crash(tmp_path: Path) -> None:
+    """Regression: the user's real prompt text contained unescaped double
+    quotes inside a YAML double-quoted scalar (e.g. mentioning "said" vs
+    "sad" and "Regen Street" in prose), which broke the YAML parser. This
+    must surface as a specific, catchable PromptsError -- never a bare
+    yaml.YAMLError bubbling up and crashing the whole TUI on startup.
+    """
+    p = tmp_path / "prompts.yaml"
+    # Deliberately malformed: an unescaped " inside a double-quoted scalar.
+    p.write_text(
+        'meeting_summary: "Note: transcription errors like "said" vs "sad" happen."\n',
+        encoding="utf-8",
+    )
+    store = PromptStore(p)
+    with pytest.raises(PromptsError) as exc_info:
+        store.load()
+    message = str(exc_info.value)
+    assert str(p) in message
+    assert "quote" in message.lower()
+
+
+def test_load_malformed_yaml_keeps_previously_loaded_prompts(tmp_path: Path) -> None:
+    """If a good load already happened, a later reload() hitting broken
+    YAML must not wipe out the good in-memory prompts -- e.g. R reloading
+    a file the user just broke mid-edit shouldn't nuke what was working."""
+    p = tmp_path / "prompts.yaml"
+    store = PromptStore(p)
+    store.save({"custom": "a good prompt"})
+    store.load()
+    assert store.get("custom") == "a good prompt"
+
+    p.write_text('custom: "broken "quote" here"\n', encoding="utf-8")
+    with pytest.raises(PromptsError):
+        store.reload()
+    # The previously-good prompt must still be there.
+    assert store.get("custom") == "a good prompt"
+
+
+def test_load_malformed_yaml_on_first_load_falls_back_to_defaults(
+    tmp_path: Path,
+) -> None:
+    """If the very first load() ever hits broken YAML (nothing good was
+    loaded before), fall back to the built-in defaults rather than an
+    empty prompt store."""
+    p = tmp_path / "prompts.yaml"
+    p.write_text('custom: "broken "quote" here"\n', encoding="utf-8")
+    store = PromptStore(p)
+    with pytest.raises(PromptsError):
+        store.load()
+    assert store.names()  # not empty -- fell back to defaults
+    assert "custom" in store.names()
