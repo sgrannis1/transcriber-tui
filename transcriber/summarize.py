@@ -48,7 +48,7 @@ async def summarize(
         "stream": True,
     }
 
-    async with httpx.AsyncClient(timeout=500.0) as client:
+    async with httpx.AsyncClient(timeout=600.0) as client:
         try:
             async with client.stream("POST", url, headers=headers, json=body) as resp:
                 if resp.status_code != 200:
@@ -110,7 +110,7 @@ async def _summarize_once(
         "temperature": temperature,
         "stream": False,
     }
-    async with httpx.AsyncClient(timeout=500.0) as client:
+    async with httpx.AsyncClient(timeout=600.0) as client:
         resp = await client.post(url, headers=headers, json=body)
         if resp.status_code != 200:
             raise SummarizationError(
