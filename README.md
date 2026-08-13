@@ -1,6 +1,6 @@
 # transcriber-tui
 
-A Textual TUI that transcribes audio files with local [faster-whisper](https://github.com/SYSTRAN/faster-whisper) and summarizes the transcript with an LLM via [OpenRouter](https://openrouter.ai).
+A Textual TUI that transcribes audio files with local [faster-whisper](https://github.com/SYSTRAN/faster-whisper) and summarizes the transcript with an LLM — via [OpenRouter](https://openrouter.ai) in the cloud, or a local model through Ollama, llama.cpp, LM Studio, or any OpenAI-compatible server.
 
 **Zero transcription cost** — Whisper runs locally on CPU. Summarization uses your OpenRouter key or a local model (Ollama / llama.cpp / LM Studio).
 
@@ -106,7 +106,7 @@ transcriber/
 ├── picker.py       # Modal file picker with filtered DirectoryTree
 ├── prompts.py      # PromptStore — YAML load/save/reload
 ├── transcribe.py   # faster-whisper wrapper (thread-safe model cache)
-├── summarize.py    # OpenRouter streaming summarization
+├── summarize.py    # multi-backend streaming summarization (OpenRouter/Ollama/llama.cpp/LM Studio)
 ├── __main__.py     # `python -m transcriber` entry point
 └── __init__.py
 ```
