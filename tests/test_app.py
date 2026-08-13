@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from textual.widgets import Button, Input, TextArea
+from textual.widgets import Button, Input, Label, TextArea
 
 from transcriber.app import TranscriberApp
 
@@ -17,6 +17,7 @@ async def test_app_composes() -> None:
         assert app.query_one("#file-input", Input) is not None
         assert app.query_one("#browse-btn", Button) is not None
         assert app.query_one("#transcribe-btn", Button) is not None
+        assert app.query_one("#export-btn", Button) is not None
         assert app.query_one("#transcript-area", TextArea) is not None
         assert app.query_one("#summary-area", TextArea) is not None
 
@@ -27,7 +28,7 @@ async def test_bindings_registered() -> None:
     app = TranscriberApp()
     async with app.run_test(size=(100, 30)):
         names = {b.key for b in app.BINDINGS}
-        expected = {"q", "t", "s", "e", "r", "c", "b", "o", "d"}
+        expected = {"q", "t", "s", "e", "r", "c", "b", "o", "d", "x"}
         assert expected.issubset(names)
 
 
@@ -216,3 +217,62 @@ async def test_action_edit_prompt_reloads_from_disk_after_editor_closes(
             await pilot.pause(0.1)
 
         assert app._store.get("custom") == "EDITED BY TEST"
+
+
+@pytest.mark.asyncio
+async def test_export_markdown_with_nothing_shows_status_not_crash() -> None:
+    """Pressing X with no transcript and no summary yet must not crash."""
+    app = TranscriberApp()
+    async with app.run_test(size=(100, 30)) as pilot:
+        app.action_export_markdown()
+        await pilot.pause(0.1)
+        # Should not raise; nothing to assert beyond "didn't crash".
+
+
+@pytest.mark.asyncio
+async def test_export_markdown_writes_real_file(tmp_path) -> None:
+    """The core feature request: X must actually produce a readable .md
+    file on disk containing the transcript and summary, viewable outside
+    the TUI."""
+    app = TranscriberApp()
+    async with app.run_test(size=(100, 30)) as pilot:
+        audio_path = tmp_path / "meeting.mp3"
+        audio_path.write_text("fake")
+        app.query_one("#file-input", Input).value = str(audio_path)
+        app._transcript_text = "[00:00] This is the transcript."
+        app._summary_text = "## Summary\nThis is the summary."
+
+        app.action_export_markdown()
+        await pilot.pause(0.1)
+
+        exported = list(tmp_path.glob("meeting-summary-*.md"))
+        assert len(exported) == 1
+        content = exported[0].read_text(encoding="utf-8")
+        assert "This is the transcript." in content
+        assert "This is the summary." in content
+        assert "# meeting" in content
+
+        status = str(app.query_one("#status", Label).render())
+        assert "Exported to" in status
+
+
+@pytest.mark.asyncio
+async def test_export_markdown_respects_export_dir_config(tmp_path) -> None:
+    """EXPORT_DIR in .env, once loaded into Config, must redirect exports
+    there instead of next to the source audio."""
+    app = TranscriberApp()
+    async with app.run_test(size=(100, 30)) as pilot:
+        export_dir = tmp_path / "exports"
+        app._config.export_dir = str(export_dir)
+
+        audio_path = tmp_path / "audio" / "call.mp3"
+        audio_path.parent.mkdir()
+        audio_path.write_text("fake")
+        app.query_one("#file-input", Input).value = str(audio_path)
+        app._summary_text = "content"
+
+        app.action_export_markdown()
+        await pilot.pause(0.1)
+
+        assert list(export_dir.glob("call-summary-*.md"))
+        assert not list(audio_path.parent.glob("*.md"))

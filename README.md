@@ -13,6 +13,7 @@ A Textual TUI that transcribes audio files with local [faster-whisper](https://g
 - Cycle backends at runtime with `B` — switch between cloud and local models without restarting
 - Editable summarization prompts — press `E` to open in your editor, save, and reload
 - Edit `.env` (API key, backend, model) directly from the TUI with `D` — no manual file hunting
+- Export the transcript + summary to a standalone markdown file with `X` — open it in any editor, viewer, or note app outside the TUI
 - Multiple prompt presets (meeting summary, lecture notes, quick recap, custom)
 - All configuration lives in plain text files — no databases, no cloud
 
@@ -50,6 +51,7 @@ On first run, Whisper downloads the `base` model (~142MB) to `~/.cache/huggingfa
 | `B` | Cycle summarization backend (openrouter → ollama → llamacpp → lmstudio → local) |
 | `E` | Edit prompts in `$EDITOR` (auto-detected: nano/vi/vim/emacs) |
 | `D` | Edit `.env` in `$EDITOR` — creates it from `.env.example` if missing |
+| `X` | Export transcript + summary to a `.md` file (also a button next to Transcribe) |
 | `R` | Reload prompts from disk |
 | `C` | Cycle to the next prompt preset |
 | `Q` | Quit |
@@ -100,6 +102,18 @@ The TUI suspends while the editor is open (same mechanism as `E` for prompts) an
 
 This is the fastest way to switch backends permanently (as opposed to `B`'s temporary in-session cycling): press `D`, change `SUMMARIZE_BACKEND` and the relevant `*_MODEL` line, save, and the new backend is active for the rest of the session and every future launch.
 
+## Exporting to Markdown
+
+Everything you see in the Transcript and Summary panes stays inside the TUI unless you export it. Press `X` (or click "Export .md") to write both to a single, self-contained markdown file you can open anywhere — a text editor, a markdown viewer, Obsidian, GitHub, etc.
+
+The exported file includes a metadata header (source audio path, generation timestamp, prompt preset, and backend/model used) followed by the summary and the full timestamped transcript. You can export with just a transcript, just a summary, or both — whichever you've generated so far; `X` only refuses if there's genuinely nothing yet.
+
+By default the file is saved next to the source audio, named `<audio-name>-summary-<timestamp>.md` (the timestamp keeps repeated exports from overwriting each other). Set `EXPORT_DIR` in `.env` to send exports somewhere else instead — e.g. a dedicated notes folder:
+
+```
+EXPORT_DIR=~/notes/meeting-summaries
+```
+
 ## Prompt Presets
 
 Prompts live in **`~/.config/transcriber/prompts.yaml`** — this is the only file the running app ever reads from or writes to. There is a second `prompts.yaml` at the root of this repo, but that one is just the shipped *template*: it gets copied to the live location once, the very first time the app runs on a machine with no live file yet, and is never read again after that. Editing the repo copy directly has no effect once the live file exists — always use `E` in the TUI (or edit `~/.config/transcriber/prompts.yaml` directly, then `R` to reload) to change what the app actually uses.
@@ -127,6 +141,7 @@ All settings via environment or `.env`:
 | `LLAMACPP_MODEL` | *(empty)* | Local model name (llamacpp backend) |
 | `LMSTUDIO_MODEL` | *(empty)* | Local model name (lmstudio backend) |
 | `WHISPER_MODEL` | `base` | Whisper model: `tiny`, `base`, `small`, `medium`, `large-v3` |
+| `EXPORT_DIR` | *(next to source audio)* | Directory for `X` markdown exports. Supports `~`. |
 | `EDITOR` | *(auto-detected)* | Text editor for prompt (`E`) and `.env` (`D`) editing. If unset, or if it points at something not installed, falls back through `nano` → `vi` → `vim` → `emacs`, whichever is actually on PATH. |
 
 ## Architecture
@@ -135,6 +150,7 @@ All settings via environment or `.env`:
 transcriber/
 ├── app.py          # Textual TUI (layout, bindings, worker flows)
 ├── config.py       # .env loading, backends, Config dataclass
+├── export.py       # Markdown export (X): build/save transcript+summary docs
 ├── picker.py       # Modal file picker: filtered DirectoryTree + free up/down/home/root navigation
 ├── prompts.py      # PromptStore — YAML load/save/reload
 ├── transcribe.py   # faster-whisper wrapper (thread-safe model cache)

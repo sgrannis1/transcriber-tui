@@ -22,6 +22,7 @@ from textual.widgets import (
 from . import transcribe as transcribe_mod
 from . import summarize as summarize_mod
 from . import config as config_mod
+from . import export as export_mod
 from .config import Config, ConfigError, EditorNotFoundError, load_config
 from .picker import FilePickerScreen
 from .prompts import PromptsError, PromptStore
@@ -59,6 +60,7 @@ class TranscriberApp(App):
         Binding("b", "cycle_backend", "Cycle Backend"),
         Binding("o", "browse", "Browse File"),
         Binding("d", "edit_env", "Edit .env"),
+        Binding("x", "export_markdown", "Export .md"),
     ]
 
     def __init__(self, audio_path: str | None = None) -> None:
@@ -83,6 +85,7 @@ class TranscriberApp(App):
                 yield Input(placeholder="Path to audio file", id="file-input")
                 yield Button("Browse", id="browse-btn")
                 yield Button("Transcribe", id="transcribe-btn", variant="primary")
+                yield Button("Export .md", id="export-btn")
             yield Label("", id="meta-row")
             yield Label("", id="status")
             with Horizontal(id="loading"):
@@ -360,6 +363,8 @@ class TranscriberApp(App):
             self.action_transcribe()
         elif event.button.id == "browse-btn":
             self.action_browse()
+        elif event.button.id == "export-btn":
+            self.action_export_markdown()
 
     def action_browse(self) -> None:
         """Open the file picker modal; set the input on selection."""
@@ -377,6 +382,40 @@ class TranscriberApp(App):
             return
         self.query_one("#file-input", Input).value = str(path)
         self._status(f"Selected: {path}")
+
+    def action_export_markdown(self) -> None:
+        """Write the transcript + summary to a .md file next to the audio
+        (or EXPORT_DIR from .env, if set) so they can be opened outside
+        the TUI in any markdown viewer or editor.
+        """
+        if not self._transcript_text and not self._summary_text:
+            self._status("Nothing to export yet — press T and/or S first")
+            return
+
+        audio_path = self.query_one("#file-input", Input).value.strip()
+        cfg = self._config
+        prompt_name = (
+            self._prompt_names[self._prompt_index] if self._prompt_names else ""
+        )
+
+        content = export_mod.build_markdown(
+            audio_path=audio_path,
+            transcript_text=self._transcript_text,
+            summary_text=self._summary_text,
+            prompt_name=prompt_name,
+            backend=getattr(cfg, "summarize_backend", ""),
+            model=getattr(cfg, "summarize_model", ""),
+            whisper_model=getattr(cfg, "whisper_model", ""),
+        )
+
+        export_dir = getattr(cfg, "export_dir", "") or None
+        target = export_mod.default_export_path(audio_path, export_dir)
+        try:
+            saved_path = export_mod.save_markdown(content, target)
+        except OSError as exc:
+            self._status(f"Export failed: {exc}")
+            return
+        self._status(f"Exported to {saved_path}")
 
 
 def run(audio_path: str | None = None) -> None:

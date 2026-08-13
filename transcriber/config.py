@@ -66,6 +66,7 @@ class Config:
     summarize_model: str = DEFAULT_OPENROUTER_MODEL
     summarize_base_url: str = _BACKEND_BASE_URLS["openrouter"]
     whisper_model: str = DEFAULT_WHISPER_MODEL
+    export_dir: str = ""
     config_dir: Path = field(default_factory=lambda: USER_CONFIG_DIR)
     prompts_path: Path = field(default_factory=lambda: USER_PROMPTS_PATH)
 
@@ -245,6 +246,7 @@ def load_config(*, reload: bool = False) -> Config:
         summarize_model=model,
         summarize_base_url=base_url,
         whisper_model=os.environ.get("WHISPER_MODEL", DEFAULT_WHISPER_MODEL),
+        export_dir=os.environ.get("EXPORT_DIR", ""),
     )
 
     if cfg.uses_openrouter and not cfg.openrouter_api_key:

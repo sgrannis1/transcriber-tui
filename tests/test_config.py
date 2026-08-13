@@ -131,7 +131,30 @@ def test_load_config_does_not_validate_key_for_local_backends(monkeypatch) -> No
         monkeypatch,
         SUMMARIZE_BACKEND="ollama",
         OLLAMA_MODEL="test-model",
-        OPENROUTER_API_KEY="sk-proj-leftover-from-another-app",
+        OPENROUTER_API_KEY="sk-pro...-app",
     )
     cfg = config_mod.load_config()  # must not raise
     assert cfg.summarize_backend == "ollama"
+
+
+def test_load_config_reads_export_dir(monkeypatch) -> None:
+    """EXPORT_DIR in .env must flow through to Config.export_dir."""
+    _base_env(
+        monkeypatch,
+        OPENROUTER_API_KEY="sk-or-v1-" + "a" * 64,
+    )
+    monkeypatch.setenv("EXPORT_DIR", "/tmp/my-exports")
+    cfg = config_mod.load_config()
+    assert cfg.export_dir == "/tmp/my-exports"
+
+
+def test_load_config_export_dir_defaults_empty(monkeypatch) -> None:
+    """Without EXPORT_DIR set, Config.export_dir must be empty (falls
+    back to the audio file's own directory in export.py)."""
+    _base_env(
+        monkeypatch,
+        OPENROUTER_API_KEY="sk-or-v1-" + "a" * 64,
+    )
+    monkeypatch.delenv("EXPORT_DIR", raising=False)
+    cfg = config_mod.load_config()
+    assert cfg.export_dir == ""
