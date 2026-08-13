@@ -19,13 +19,15 @@ SummarizeBackend = Literal["openrouter", "ollama", "llamacpp", "lmstudio", "loca
 VALID_BACKENDS = ("openrouter", "ollama", "llamacpp", "lmstudio", "local")
 
 # Default base URLs for each backend.
-_BACKEND_BASE_URLS: dict[str, str] = {
+BACKEND_BASE_URLS: dict[str, str] = {
     "openrouter": "https://openrouter.ai/api/v1",
     "ollama": "http://localhost:11434/v1",
     "llamacpp": "http://localhost:8080/v1",
     "lmstudio": "http://localhost:1234/v1",
     "local": "http://localhost:11434/v1",
 }
+# Backwards-compatible alias (old private name); prefer BACKEND_BASE_URLS.
+_BACKEND_BASE_URLS = BACKEND_BASE_URLS
 
 
 class ConfigError(RuntimeError):
@@ -91,7 +93,7 @@ def load_config() -> Config:
 
     # Determine base URL: explicit SUMMARIZE_BASE_URL overrides the default.
     base_url = os.environ.get(
-        "SUMMARIZE_BASE_URL", _BACKEND_BASE_URLS.get(backend, "")
+        "SUMMARIZE_BASE_URL", BACKEND_BASE_URLS.get(backend, "")
     ).rstrip("/")
 
     # Determine model: explicit SUMMARIZE_MODEL overrides backend's default.
@@ -126,7 +128,7 @@ def load_config() -> Config:
         raise ConfigError(
             "OPENROUTER_API_KEY is not set, but SUMMARIZE_BACKEND is 'openrouter'.\n"
             "Either set OPENROUTER_API_KEY in .env, or set SUMMARIZE_BACKEND to a\n"
-            "local backend (ollama / llamacpp / local)."
+            "local backend (ollama / llamacpp / lmstudio / local)."
         )
 
     if cfg.whisper_model not in VALID_WHISPER_MODELS:

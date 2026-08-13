@@ -61,3 +61,21 @@ async def test_cycle_prompt() -> None:
         assert app._prompt_index == 2
         app.action_cycle_prompt()
         assert app._prompt_index == 0  # wraps around
+
+
+@pytest.mark.asyncio
+async def test_cycle_backend_updates_model_and_base_url() -> None:
+    """Regression: B must update summarize_model/base_url, not a stale attr.
+
+    Previously _update_meta and _do_summarize read a nonexistent
+    Config.openrouter_model, so switching backends silently kept calling
+    OpenRouter with an empty model name. This locks in the real fix.
+    """
+    app = TranscriberApp()
+    async with app.run_test(size=(100, 30)) as pilot:
+        assert app._config.summarize_backend == "openrouter"
+        app.action_cycle_backend()
+        await pilot.pause(0.05)
+        assert app._config.summarize_backend == "ollama"
+        assert app._config.summarize_model == "hermes-qwen35b:latest"
+        assert app._config.summarize_base_url == "http://localhost:11434/v1"

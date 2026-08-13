@@ -21,6 +21,7 @@ from textual.widgets import (
 
 from . import transcribe as transcribe_mod
 from . import summarize as summarize_mod
+from . import config as config_mod
 from .config import Config, ConfigError, load_config
 from .picker import FilePickerScreen
 from .prompts import PromptStore
@@ -133,11 +134,12 @@ class TranscriberApp(App):
         return self._store.get(name)
 
     def _update_meta(self) -> None:
+        """Refresh the meta row: active prompt, backend, model, and Whisper size."""
         prompt = self._prompt_names[self._prompt_index]
-        model = getattr(self._config, "openrouter_model", "?")
-        whisper = getattr(self._config, "whisper_model", "?")
+        cfg = self._config
         self.query_one("#meta-row", Label).update(
-            f"Prompt: {prompt}   |   LLM: {model}   |   Whisper: {whisper}"
+            f"Prompt: {prompt}   |   Backend: {cfg.summarize_backend} "
+            f"({cfg.summarize_model or '?'})   |   Whisper: {cfg.whisper_model}"
         )
 
     # ------------------------------------------------------------------
@@ -201,12 +203,14 @@ class TranscriberApp(App):
 
     async def _do_summarize(self, prompt: str) -> None:
         """Streams summary chunks into the TextArea (async)."""
+        cfg = self._config
         try:
             async for chunk in summarize_mod.summarize(
                 self._transcript_text,
                 prompt,
-                getattr(self._config, "openrouter_model", ""),
-                getattr(self._config, "openrouter_api_key", ""),
+                cfg.summarize_model,
+                cfg.openrouter_api_key if cfg.uses_openrouter else "",
+                cfg.summarize_base_url,
             ):
                 self._summary_text += chunk
                 self.query_one("#summary-area", TextArea).text = self._summary_text
@@ -252,13 +256,19 @@ class TranscriberApp(App):
         self._status(f"Prompt: {self._prompt_names[self._prompt_index]}")
 
     def action_cycle_backend(self) -> None:
-        """Cycle through: openrouter → ollama → llamacpp → local → openrouter ..."""
-        from .config import VALID_BACKENDS, _BACKEND_BASE_URLS
+        """Cycle the summarization backend: openrouter -> ollama -> llamacpp
+        -> lmstudio -> local -> openrouter ...
 
+        Resets summarize_model to a sensible per-backend default. For
+        llamacpp/lmstudio/local there is no universal default model name,
+        so the model field is cleared — set SUMMARIZE_MODEL (or the
+        backend-specific *_MODEL env var) in .env, or the status bar will
+        show "(?)" until you configure one.
+        """
         self._backend_index = (self._backend_index + 1) % len(self._backends)
         backend = self._backends[self._backend_index]
         self._config.summarize_backend = backend
-        self._config.summarize_base_url = _BACKEND_BASE_URLS.get(backend, "")
+        self._config.summarize_base_url = config_mod.BACKEND_BASE_URLS.get(backend, "")
         # Set a sensible default model for each backend.
         defaults = {
             "openrouter": "deepseek/deepseek-v4-flash-0731",

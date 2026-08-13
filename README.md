@@ -2,7 +2,7 @@
 
 A Textual TUI that transcribes audio files with local [faster-whisper](https://github.com/SYSTRAN/faster-whisper) and summarizes the transcript with an LLM via [OpenRouter](https://openrouter.ai).
 
-**Zero transcription cost** — Whisper runs locally on CPU. Summarization uses your OpenRouter key or a local model (Ollama / llama.cpp).
+**Zero transcription cost** — Whisper runs locally on CPU. Summarization uses your OpenRouter key or a local model (Ollama / llama.cpp / LM Studio).
 
 ## Features
 
@@ -65,7 +65,14 @@ The summarizer supports multiple backends, cycled at runtime with `B` or set via
 
 *Override with `SUMMARIZE_BASE_URL` for any OpenAI-compatible endpoint (LM Studio, vLLM, etc.).
 
-Set `SUMMARIZE_BACKEND` in `.env` to pick the default, and `SUMMARIZE_MODEL` for the model name. For Ollama, you can also set `OLLAMA_MODEL` as shorthand:
+Set `SUMMARIZE_BACKEND` in `.env` to pick the startup default. Set `SUMMARIZE_MODEL` to name the model explicitly, or use the backend-specific shorthand (`OLLAMA_MODEL`, `LLAMACPP_MODEL`, `LMSTUDIO_MODEL`) — `SUMMARIZE_MODEL` wins if both are set. Example for a local Ollama setup:
+
+```
+SUMMARIZE_BACKEND=ollama
+OLLAMA_MODEL=hermes-qwen35b:latest
+```
+
+**Note:** pressing `B` to cycle backends at runtime only auto-fills a model name for `openrouter` and `ollama` (which have sane defaults). Cycling to `llamacpp`, `lmstudio`, or `local` clears the model field — the status bar shows `(?)` until you set one via `SUMMARIZE_MODEL`/`.env` and restart, since there's no single "right" model name for a generic local server.
 
 ## Prompt Presets
 
@@ -79,7 +86,7 @@ All settings via environment or `.env`:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SUMMARIZE_BACKEND` | `openrouter` | Backend: `openrouter`, `ollama`, `llamacpp`, or `local` |
+| `SUMMARIZE_BACKEND` | `openrouter` | Backend: `openrouter`, `ollama`, `llamacpp`, `lmstudio`, or `local` |
 | `SUMMARIZE_MODEL` | *(backend-dependent)* | Model name for the active summarization backend |
 | `SUMMARIZE_BASE_URL` | *(backend-dependent)* | Override the default base URL for any backend |
 | `OPENROUTER_API_KEY` | *(required for openrouter)* | Your OpenRouter API key |
