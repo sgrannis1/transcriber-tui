@@ -127,8 +127,19 @@ class TranscriberApp(App):
         self.query_one("#status", Label).update(text)
 
     def _refresh_prompt_names(self) -> None:
+        """Rebuild the prompt name list and select the default/remembered one.
+
+        Uses PromptStore.active_name() (meeting_summary by default, or the
+        user's last explicit C-selection if one was persisted) rather than
+        blindly picking index 0 of the alphabetically-sorted name list —
+        that would land on "custom" (a placeholder, not a real prompt) on
+        a fresh install, since "custom" sorts before every other name.
+        """
         self._prompt_names = self._store.names() or ["custom"]
-        self._prompt_index = 0
+        active = self._store.active_name()
+        self._prompt_index = (
+            self._prompt_names.index(active) if active in self._prompt_names else 0
+        )
 
     def _current_prompt(self) -> str:
         name = self._prompt_names[self._prompt_index]
@@ -284,8 +295,12 @@ class TranscriberApp(App):
         if not self._prompt_names:
             return
         self._prompt_index = (self._prompt_index + 1) % len(self._prompt_names)
+        selected = self._prompt_names[self._prompt_index]
+        store = getattr(self, "_store", None)
+        if store is not None:
+            store.remember_selected(selected)
         self._update_meta()
-        self._status(f"Prompt: {self._prompt_names[self._prompt_index]}")
+        self._status(f"Prompt: {selected}")
 
     def action_cycle_backend(self) -> None:
         """Cycle the summarization backend: openrouter -> ollama -> llamacpp

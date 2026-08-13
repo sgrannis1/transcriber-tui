@@ -91,6 +91,8 @@ Prompts live in `~/.config/transcriber/prompts.yaml` (created automatically on f
 
 Built-in presets: `meeting_summary`, `lecture_notes`, `quick_recap`, and `custom` (the "edit-over-time" prompt).
 
+**`meeting_summary` is active by default** on a fresh install — the TUI does not simply pick presets alphabetically (which would default to `custom`, a placeholder with no real instructions). Press `C` to cycle to a different preset; whichever one you land on is remembered in `~/.config/transcriber/last_prompt.txt` and stays active across restarts until you cycle again.
+
 ## Configuration
 
 All settings via environment or `.env`:

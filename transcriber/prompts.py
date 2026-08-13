@@ -19,6 +19,15 @@ SHIPPED_PROMPTS_PATH = Path(__file__).resolve().parent.parent / "prompts.yaml"
 USER_CONFIG_DIR = Path.home() / ".config" / "transcriber"
 USER_PROMPTS_PATH = USER_CONFIG_DIR / "prompts.yaml"
 
+# Remembers which prompt preset was last active, across restarts. Separate
+# tiny file (not part of prompts.yaml) so it never shows up as a "prompt"
+# and never gets clobbered by editing prompts.yaml by hand.
+LAST_PROMPT_PATH = USER_CONFIG_DIR / "last_prompt.txt"
+
+# Preferred default prompt on a brand-new install (before the user has ever
+# picked one). Falls back to alphabetical-first if this name isn't present.
+DEFAULT_PROMPT_NAME = "meeting_summary"
+
 # --- Default prompts embedded as a fallback (matches shipped prompts.yaml) ---
 _DEFAULTS: dict[str, str] = {
     "meeting_summary": (
@@ -97,9 +106,38 @@ class PromptStore:
         return sorted(self.prompts.keys())
 
     def active_name(self) -> str:
-        """Return the first prompt name (the default active one)."""
+        """Return the prompt to activate by default.
+
+        Priority: the user's last explicit selection (persisted across
+        restarts) > the built-in DEFAULT_PROMPT_NAME (meeting_summary) if
+        present > alphabetically first as a last resort.
+        """
         names = self.names()
-        return names[0] if names else "custom"
+        if not names:
+            return "custom"
+
+        last = self._read_last_selected()
+        if last and last in names:
+            return last
+
+        if DEFAULT_PROMPT_NAME in names:
+            return DEFAULT_PROMPT_NAME
+
+        return names[0]
+
+    def remember_selected(self, name: str) -> None:
+        """Persist the given prompt name as the "last selected" for next launch."""
+        try:
+            LAST_PROMPT_PATH.parent.mkdir(parents=True, exist_ok=True)
+            LAST_PROMPT_PATH.write_text(name, encoding="utf-8")
+        except OSError:
+            pass  # best-effort; never let persistence failures break the TUI
+
+    def _read_last_selected(self) -> str:
+        try:
+            return LAST_PROMPT_PATH.read_text(encoding="utf-8").strip()
+        except OSError:
+            return ""
 
     # ------------------------------------------------------------------
     # Editing

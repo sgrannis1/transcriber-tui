@@ -52,11 +52,23 @@ async def test_summarize_no_transcript() -> None:
 
 
 @pytest.mark.asyncio
-async def test_cycle_prompt() -> None:
-    """Cycling prompt updates the index."""
+async def test_cycle_prompt(monkeypatch, tmp_path) -> None:
+    """Cycling prompt updates the index.
+
+    Isolated via monkeypatched LAST_PROMPT_PATH — action_cycle_prompt calls
+    PromptStore.remember_selected(), which without isolation would write
+    into the real ~/.config/transcriber/last_prompt.txt.
+    """
+    from transcriber import prompts as prompts_mod
+
+    monkeypatch.setattr(
+        prompts_mod, "LAST_PROMPT_PATH", tmp_path / "last_prompt.txt"
+    )
+
     app = TranscriberApp()
     async with app.run_test(size=(100, 30)):
         app._prompt_names = ["a", "b", "c"]
+        app._prompt_index = 0  # reset: on_mount may have selected a default
         app.action_cycle_prompt()
         assert app._prompt_index == 1
         app.action_cycle_prompt()
@@ -129,3 +141,27 @@ def test_resolve_env_path_creates_from_example(tmp_path, monkeypatch) -> None:
     assert created == fake_root / ".env"
     assert created.exists()
     assert created.read_text(encoding="utf-8") == "OPENROUTER_API_KEY=\n"
+
+
+@pytest.mark.asyncio
+async def test_default_prompt_is_meeting_summary_on_fresh_install(
+    tmp_path, monkeypatch
+) -> None:
+    """Regression: a fresh install must land on meeting_summary, not the
+    "custom" placeholder, when the app first mounts.
+
+    Isolated from the real ~/.config/transcriber via monkeypatched paths,
+    so this never reads or writes the user's actual prompt config.
+    """
+    from transcriber import prompts as prompts_mod
+
+    fake_prompts_path = tmp_path / "prompts.yaml"
+    monkeypatch.setattr(prompts_mod, "USER_PROMPTS_PATH", fake_prompts_path)
+    monkeypatch.setattr(
+        prompts_mod, "LAST_PROMPT_PATH", tmp_path / "last_prompt.txt"
+    )
+
+    app = TranscriberApp()
+    async with app.run_test(size=(100, 30)):
+        assert "meeting_summary" in app._prompt_names
+        assert app._prompt_names[app._prompt_index] == "meeting_summary"
