@@ -13,6 +13,7 @@ async def test_app_composes() -> None:
     app = TranscriberApp()
     async with app.run_test(size=(100, 30)) as pilot:
         assert app.query_one("#file-input", Input) is not None
+        assert app.query_one("#browse-btn", Button) is not None
         assert app.query_one("#transcribe-btn", Button) is not None
         assert app.query_one("#transcript-area", TextArea) is not None
         assert app.query_one("#summary-area", TextArea) is not None
@@ -24,7 +25,7 @@ async def test_bindings_registered() -> None:
     app = TranscriberApp()
     async with app.run_test(size=(100, 30)):
         names = {b.key for b in app.BINDINGS}
-        expected = {"q", "t", "s", "e", "r", "c", "b"}
+        expected = {"q", "t", "s", "e", "r", "c", "b", "o"}
         assert expected.issubset(names)
 
 

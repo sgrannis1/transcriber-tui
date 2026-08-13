@@ -22,6 +22,7 @@ from textual.widgets import (
 from . import transcribe as transcribe_mod
 from . import summarize as summarize_mod
 from .config import Config, ConfigError, load_config
+from .picker import FilePickerScreen
 from .prompts import PromptStore
 
 
@@ -55,6 +56,7 @@ class TranscriberApp(App):
         Binding("r", "reload_prompts", "Reload Prompts"),
         Binding("c", "cycle_prompt", "Cycle Prompt"),
         Binding("b", "cycle_backend", "Cycle Backend"),
+        Binding("o", "browse", "Browse File"),
     ]
 
     def __init__(self, audio_path: str | None = None) -> None:
@@ -77,6 +79,7 @@ class TranscriberApp(App):
         with Vertical(id="main"):
             with Horizontal(id="file-row"):
                 yield Input(placeholder="Path to audio file", id="file-input")
+                yield Button("Browse", id="browse-btn")
                 yield Button("Transcribe", id="transcribe-btn", variant="primary")
             yield Label("", id="meta-row")
             yield Label("", id="status")
@@ -271,6 +274,25 @@ class TranscriberApp(App):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "transcribe-btn":
             self.action_transcribe()
+        elif event.button.id == "browse-btn":
+            self.action_browse()
+
+    def action_browse(self) -> None:
+        """Open the file picker modal; set the input on selection."""
+        start = Path.home()
+        current = self.query_one("#file-input", Input).value.strip()
+        if current:
+            current_path = Path(current).expanduser()
+            start = current_path if current_path.is_dir() else current_path.parent
+
+        self.push_screen(FilePickerScreen(start), self._on_file_picked)
+
+    def _on_file_picked(self, path: Path | None) -> None:
+        if path is None:
+            self._status("Browse cancelled")
+            return
+        self.query_one("#file-input", Input).value = str(path)
+        self._status(f"Selected: {path}")
 
 
 def run(audio_path: str | None = None) -> None:

@@ -7,7 +7,8 @@ A Textual TUI that transcribes audio files with local [faster-whisper](https://g
 ## Features
 
 - Transcribe any audio file with local Whisper (225x realtime on CPU with the `base` model)
-- Summarize with **OpenRouter** (cloud) or **local models** via Ollama / llama.cpp / any OpenAI-compatible endpoint
+- Built-in file browser — launch with no args and navigate to your audio in the TUI
+- Summarize with **OpenRouter** (cloud) or **local models** via Ollama / llama.cpp / LM Studio / any OpenAI-compatible endpoint
 - Stream summaries from an LLM with live token display
 - Cycle backends at runtime with `B` — switch between cloud and local models without restarting
 - Editable summarization prompts — press `E` to open in vim, save, and reload
@@ -28,7 +29,10 @@ cp .env.example .env
 # Edit .env and set: OPENROUTER_API_KEY=<your-key>
 # Get a key at https://openrouter.ai/keys
 
-# Launch
+# Launch (no args needed — browse to your file in the TUI)
+python -m transcriber
+
+# Or pass a file directly:
 python -m transcriber /path/to/audio.mp3
 ```
 
@@ -39,6 +43,7 @@ On first run, Whisper downloads the `base` model (~142MB) to `~/.cache/huggingfa
 | Key | Action |
 |-----|--------|
 | `T` | Transcribe the selected audio file |
+| `O` | Browse for an audio file (file picker) |
 | `S` | Summarize the transcript |
 | `B` | Cycle summarization backend (openrouter → ollama → llamacpp → lmstudio → local) |
 | `E` | Edit prompts in `$EDITOR` (default: vim) |
@@ -90,7 +95,8 @@ All settings via environment or `.env`:
 ```
 transcriber/
 ├── app.py          # Textual TUI (layout, bindings, worker flows)
-├── config.py       # .env loading and Config dataclass
+├── config.py       # .env loading, backends, Config dataclass
+├── picker.py       # Modal file picker with filtered DirectoryTree
 ├── prompts.py      # PromptStore — YAML load/save/reload
 ├── transcribe.py   # faster-whisper wrapper (thread-safe model cache)
 ├── summarize.py    # OpenRouter streaming summarization
