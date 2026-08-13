@@ -36,6 +36,19 @@ BACKEND_BASE_URLS: dict[str, str] = {
 _BACKEND_BASE_URLS = BACKEND_BASE_URLS
 
 
+# Prefixes of API keys from *other* providers that are easy to paste into
+# OPENROUTER_API_KEY by mistake (e.g. copying from a different .env). Used
+# only to produce a clear, specific error instead of a confusing 401 from
+# OpenRouter itself ("Missing Authentication header", which does not
+# mention that a key was actually sent -- just the wrong kind).
+_KNOWN_OTHER_KEY_PREFIXES: dict[str, str] = {
+    "sk-proj-": "an OpenAI (not OpenRouter)",
+    "sk-ant-": "an Anthropic",
+}
+# OpenRouter keys always start with this prefix.
+_OPENROUTER_KEY_PREFIX = "sk-or-"
+
+
 class ConfigError(RuntimeError):
     """Raised when configuration is missing or invalid."""
 
@@ -151,6 +164,34 @@ def _resolve_backend(raw: str) -> str:
     )
 
 
+def _validate_openrouter_key_format(key: str) -> None:
+    """Catch the common "wrong provider's key" mistake before it ever
+    reaches OpenRouter and comes back as a confusing generic 401.
+
+    OpenRouter itself replies "Missing Authentication header" for a key
+    it can't recognise as one of its own -- which reads as if no key was
+    sent at all, even though one was. Checking the prefix locally turns
+    that into an immediate, specific, actionable error.
+    """
+    for prefix, provider in _KNOWN_OTHER_KEY_PREFIXES.items():
+        if key.startswith(prefix):
+            raise ConfigError(
+                f"OPENROUTER_API_KEY looks like {provider} key "
+                f"(starts with '{prefix}'), not an OpenRouter key.\n"
+                f"OpenRouter keys start with '{_OPENROUTER_KEY_PREFIX}'.\n"
+                "Get a real OpenRouter key at https://openrouter.ai/keys "
+                "and set it in .env (press D in the TUI to edit it)."
+            )
+    if not key.startswith(_OPENROUTER_KEY_PREFIX):
+        # Not a known other-provider prefix either -- warn but don't hard
+        # fail, since OpenRouter's key format could change or this could
+        # be a legitimate edge case (e.g. a proxy/gateway in front of it).
+        # A ConfigError here would be too aggressive; let the real request
+        # be the final judge, but the shape is unusual enough to be worth
+        # noting in case it explains a downstream 401.
+        pass
+
+
 def load_config(*, reload: bool = False) -> Config:
     """Load configuration from .env and environment variables.
 
@@ -212,6 +253,9 @@ def load_config(*, reload: bool = False) -> Config:
             "Either set OPENROUTER_API_KEY in .env, or set SUMMARIZE_BACKEND to a\n"
             "local backend (ollama / llamacpp / lmstudio / local)."
         )
+
+    if cfg.uses_openrouter and cfg.openrouter_api_key:
+        _validate_openrouter_key_format(cfg.openrouter_api_key)
 
     if cfg.whisper_model not in VALID_WHISPER_MODELS:
         raise ConfigError(

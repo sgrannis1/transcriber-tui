@@ -117,7 +117,7 @@ All settings via environment or `.env`:
 | `SUMMARIZE_BACKEND` | `openrouter` | Backend: `openrouter`, `ollama`, `llamacpp`, `lmstudio`, or `local` |
 | `SUMMARIZE_MODEL` | *(backend-dependent)* | Model name for the active summarization backend |
 | `SUMMARIZE_BASE_URL` | *(backend-dependent)* | Override the default base URL for any backend |
-| `OPENROUTER_API_KEY` | *(required for openrouter)* | Your OpenRouter API key |
+| `OPENROUTER_API_KEY` | *(required for openrouter)* | Your OpenRouter API key — must start with `sk-or-`. A key from another provider (e.g. OpenAI's `sk-proj-...`) is rejected at startup with a clear error instead of a confusing 401 from OpenRouter. |
 | `OPENROUTER_MODEL` | `deepseek/deepseek-v4-flash-0731` | Cloud LLM model (openrouter backend) |
 | `OLLAMA_MODEL` | `hermes-qwen35b:latest` | Local model name (ollama backend) |
 | `LLAMACPP_MODEL` | *(empty)* | Local model name (llamacpp backend) |
@@ -140,6 +140,12 @@ transcriber/
 ```
 
 Transcription runs in a worker thread (CPU-bound), summarization runs as an async generator that streams tokens into the TUI live.
+
+## Troubleshooting
+
+**`Summarization failed: HTTP 401: "Missing Authentication header"`** — `OPENROUTER_API_KEY` in `.env` is not a valid OpenRouter key. The most common cause is pasting a key from a different provider by mistake (OpenAI keys start with `sk-proj-`, Anthropic with `sk-ant-`; OpenRouter keys start with `sk-or-`). The app checks this at startup and shows a specific error for known cases, but if you edited `.env` mid-session, press `D` to fix it — the config reloads immediately, no restart needed. Get a real key at https://openrouter.ai/keys.
+
+**`FileNotFoundError` on `E` or `D`** — fixed in current versions; `$EDITOR` is auto-detected with a fallback chain (`nano`/`vi`/`vim`/`emacs`) rather than assuming `vim` is installed. Pull the latest if you still see this.
 
 ## License
 

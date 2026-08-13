@@ -69,3 +69,69 @@ def test_resolve_editor_raises_clear_error_when_nothing_found(monkeypatch) -> No
     message = str(exc_info.value)
     assert "nano" in message  # mentions what it tried
     assert "EDITOR" in message  # tells the user how to fix it
+
+
+def _base_env(monkeypatch, **overrides) -> None:
+    """Minimal env for load_config(): openrouter backend, no .env file."""
+    monkeypatch.setattr(config_mod, "_find_env_file", lambda: None)
+    monkeypatch.delenv("SUMMARIZE_BACKEND", raising=False)
+    monkeypatch.delenv("SUMMARIZE_MODEL", raising=False)
+    monkeypatch.delenv("SUMMARIZE_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENROUTER_MODEL", raising=False)
+    monkeypatch.delenv("WHISPER_MODEL", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    for key, value in overrides.items():
+        monkeypatch.setenv(key, value)
+
+
+def test_load_config_rejects_openai_key_in_openrouter_slot(monkeypatch) -> None:
+    """Regression: this is the exact bug the user hit. Pasting an OpenAI
+    key (sk-proj-...) into OPENROUTER_API_KEY must fail immediately with
+    a specific, actionable ConfigError -- not silently pass config
+    loading and only fail later with OpenRouter's confusing generic
+    "Missing Authentication header" 401 after a real network round-trip.
+    """
+    _base_env(
+        monkeypatch,
+        OPENROUTER_API_KEY="sk-proj-abc123def456",
+    )
+    with pytest.raises(config_mod.ConfigError) as exc_info:
+        config_mod.load_config()
+    message = str(exc_info.value)
+    assert "OpenAI" in message
+    assert "sk-proj-" in message
+    assert "openrouter.ai/keys" in message
+
+
+def test_load_config_rejects_anthropic_key_in_openrouter_slot(monkeypatch) -> None:
+    """Same class of mistake with an Anthropic-shaped key."""
+    _base_env(
+        monkeypatch,
+        OPENROUTER_API_KEY="sk-ant-abc123def456",
+    )
+    with pytest.raises(config_mod.ConfigError) as exc_info:
+        config_mod.load_config()
+    assert "Anthropic" in str(exc_info.value)
+
+
+def test_load_config_accepts_real_openrouter_key(monkeypatch) -> None:
+    """A correctly-shaped OpenRouter key must load without error."""
+    _base_env(
+        monkeypatch,
+        OPENROUTER_API_KEY="sk-or-v1-" + "a" * 64,
+    )
+    cfg = config_mod.load_config()
+    assert cfg.openrouter_api_key.startswith("sk-or-")
+
+
+def test_load_config_does_not_validate_key_for_local_backends(monkeypatch) -> None:
+    """An OpenAI-shaped key sitting unused in OPENROUTER_API_KEY must not
+    block loading when the active backend doesn't even use OpenRouter."""
+    _base_env(
+        monkeypatch,
+        SUMMARIZE_BACKEND="ollama",
+        OLLAMA_MODEL="test-model",
+        OPENROUTER_API_KEY="sk-proj-leftover-from-another-app",
+    )
+    cfg = config_mod.load_config()  # must not raise
+    assert cfg.summarize_backend == "ollama"
