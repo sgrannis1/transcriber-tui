@@ -14,6 +14,7 @@ A Textual TUI that transcribes audio files with local [faster-whisper](https://g
 - Editable summarization prompts — press `E` to open in your editor, save, and reload
 - Edit `.env` (API key, backend, model) directly from the TUI with `D` — no manual file hunting
 - Export the transcript + summary to a standalone markdown file with `X` — open it in any editor, viewer, or note app outside the TUI
+- One-key full workflow: `F` transcribes, summarizes, and exports in a single action — the common case of "here's a file, give me a summary I can read elsewhere"
 - Multiple prompt presets (meeting summary, lecture notes, quick recap, custom)
 - All configuration lives in plain text files — no databases, no cloud
 
@@ -41,10 +42,13 @@ python -m transcriber /path/to/audio.mp3
 
 On first run, Whisper downloads the `base` model (~142MB) to `~/.cache/huggingface`. This happens once.
 
+**Fast path:** browse to (or pass) an audio file, then press `F` — transcribe, summarize, and export to markdown all happen in one action.
+
 ## Keyboard Reference
 
 | Key | Action |
 |-----|--------|
+| `F` | **Full workflow:** transcribe → summarize → export, in one action |
 | `T` | Transcribe the selected audio file |
 | `O` | Browse for an audio file (file picker) |
 | `S` | Summarize the transcript |
@@ -102,13 +106,28 @@ The TUI suspends while the editor is open (same mechanism as `E` for prompts) an
 
 This is the fastest way to switch backends permanently (as opposed to `B`'s temporary in-session cycling): press `D`, change `SUMMARIZE_BACKEND` and the relevant `*_MODEL` line, save, and the new backend is active for the rest of the session and every future launch.
 
+## Full Workflow (One Key)
+
+The common case: you have an audio file, and you just want a summary you can read somewhere other than this terminal. Point the file input at it (type a path, `O` to browse, or pass it on the command line) and press `F` — or click the "Full Workflow" button.
+
+`F` runs transcribe → summarize → export as a single chained action:
+
+1. Transcribes the audio (status shows `[1/3] Transcribing ...`)
+2. Feeds the transcript to the active summarization backend and prompt preset (`[2/3] ... summarizing ...`)
+3. Writes both to a markdown file (`[3/3] Exporting markdown ...`)
+4. Final status: `Done — transcribed, summarized, and exported to <path>`
+
+If any stage fails, the chain stops there rather than continuing with bad or missing data — a failed transcription never gets "summarized" from an empty transcript, and a failed summarization never gets exported. Whatever succeeded before the failure (e.g. a good transcript when only summarization failed) stays visible in its pane and can still be exported on its own with `X`.
+
+`F` respects the same backend, prompt preset, and `EXPORT_DIR` settings as running each step manually — it's exactly equivalent to pressing `T`, waiting, `S`, waiting, `X`, just without the waiting-and-pressing-again.
+
 ## Exporting to Markdown
 
 Everything you see in the Transcript and Summary panes stays inside the TUI unless you export it. Press `X` (or click "Export .md") to write both to a single, self-contained markdown file you can open anywhere — a text editor, a markdown viewer, Obsidian, GitHub, etc.
 
 The exported file includes a metadata header (source audio path, generation timestamp, prompt preset, and backend/model used) followed by the summary and the full timestamped transcript. You can export with just a transcript, just a summary, or both — whichever you've generated so far; `X` only refuses if there's genuinely nothing yet.
 
-By default the file is saved next to the source audio, named `<audio-name>-summary-<timestamp>.md` (the timestamp keeps repeated exports from overwriting each other). Set `EXPORT_DIR` in `.env` to send exports somewhere else instead — e.g. a dedicated notes folder:
+By default the file is saved next to the source audio, named `<audio-name>-summary-<timestamp>.md` (the timestamp keeps repeated exports from overwriting each other). Set `EXPORT_DIR` in `.env` to send exports somewhere else instead — e.g. a dedicated notes folder. The directory is created automatically if it doesn't exist yet, so pointing `EXPORT_DIR` at a brand-new notes vault works on the very first export:
 
 ```
 EXPORT_DIR=~/notes/meeting-summaries
@@ -141,7 +160,7 @@ All settings via environment or `.env`:
 | `LLAMACPP_MODEL` | *(empty)* | Local model name (llamacpp backend) |
 | `LMSTUDIO_MODEL` | *(empty)* | Local model name (lmstudio backend) |
 | `WHISPER_MODEL` | `base` | Whisper model: `tiny`, `base`, `small`, `medium`, `large-v3` |
-| `EXPORT_DIR` | *(next to source audio)* | Directory for `X` markdown exports. Supports `~`. |
+| `EXPORT_DIR` | *(next to source audio)* | Directory for `X`/`F` markdown exports. Supports `~`; created automatically if it doesn't exist. |
 | `EDITOR` | *(auto-detected)* | Text editor for prompt (`E`) and `.env` (`D`) editing. If unset, or if it points at something not installed, falls back through `nano` → `vi` → `vim` → `emacs`, whichever is actually on PATH. |
 
 ## Architecture

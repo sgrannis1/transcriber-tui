@@ -18,6 +18,7 @@ async def test_app_composes() -> None:
         assert app.query_one("#browse-btn", Button) is not None
         assert app.query_one("#transcribe-btn", Button) is not None
         assert app.query_one("#export-btn", Button) is not None
+        assert app.query_one("#full-workflow-btn", Button) is not None
         assert app.query_one("#transcript-area", TextArea) is not None
         assert app.query_one("#summary-area", TextArea) is not None
 
@@ -28,7 +29,7 @@ async def test_bindings_registered() -> None:
     app = TranscriberApp()
     async with app.run_test(size=(100, 30)):
         names = {b.key for b in app.BINDINGS}
-        expected = {"q", "t", "s", "e", "r", "c", "b", "o", "d", "x"}
+        expected = {"q", "t", "s", "e", "r", "c", "b", "o", "d", "x", "f"}
         assert expected.issubset(names)
 
 
@@ -276,3 +277,179 @@ async def test_export_markdown_respects_export_dir_config(tmp_path) -> None:
 
         assert list(export_dir.glob("call-summary-*.md"))
         assert not list(audio_path.parent.glob("*.md"))
+
+
+@pytest.mark.asyncio
+async def test_export_markdown_creates_export_dir_if_missing(tmp_path) -> None:
+    """Regression: if EXPORT_DIR points at a directory that doesn't exist
+    yet (a fresh notes vault, for instance), the export must create it
+    rather than fail with 'No such file or directory'."""
+    app = TranscriberApp()
+    async with app.run_test(size=(100, 30)) as pilot:
+        export_dir = tmp_path / "brand" / "new" / "notes" / "vault"
+        assert not export_dir.exists()
+        app._config.export_dir = str(export_dir)
+
+        audio_path = tmp_path / "call.mp3"
+        audio_path.write_text("fake")
+        app.query_one("#file-input", Input).value = str(audio_path)
+        app._summary_text = "content"
+
+        app.action_export_markdown()
+        await pilot.pause(0.1)
+
+        assert export_dir.exists()
+        assert list(export_dir.glob("call-summary-*.md"))
+        status = str(app.query_one("#status", Label).render())
+        assert "failed" not in status.lower()
+
+
+@pytest.mark.asyncio
+async def test_full_workflow_no_file_shows_status_not_crash() -> None:
+    """Pressing F with no file selected must not crash."""
+    app = TranscriberApp()
+    async with app.run_test(size=(100, 30)) as pilot:
+        app.action_run_full_workflow()
+        await pilot.pause(0.1)
+        status = str(app.query_one("#status", Label).render())
+        assert "not found" in status.lower() or "(empty)" in status
+
+
+@pytest.mark.asyncio
+async def test_full_workflow_chains_transcribe_summarize_export(
+    tmp_path, monkeypatch
+) -> None:
+    """The core feature request: F should run transcribe -> summarize ->
+    export in one action, without the user pressing T, waiting, S,
+    waiting, X separately. Mocks the underlying transcribe/summarize
+    calls (already covered by their own real-call tests elsewhere) to
+    focus on the chaining and end-to-end file output.
+    """
+    from transcriber.transcribe import Segment, Transcript
+
+    audio_path = tmp_path / "meeting.mp3"
+    audio_path.write_text("fake")
+
+    fake_transcript = Transcript(
+        text="Hello world.",
+        segments=[Segment(start=0.0, end=1.0, text="Hello world.")],
+        language="en",
+        duration=1.0,
+    )
+
+    async def fake_summarize(*args, **kwargs):
+        for chunk in ["## Summary\n", "A short summary."]:
+            yield chunk
+
+    monkeypatch.setattr(
+        "transcriber.app.transcribe_mod.transcribe", lambda *a, **k: fake_transcript
+    )
+    monkeypatch.setattr(
+        "transcriber.app.summarize_mod.summarize", fake_summarize
+    )
+
+    app = TranscriberApp()
+    async with app.run_test(size=(100, 30)) as pilot:
+        app.query_one("#file-input", Input).value = str(audio_path)
+        app.action_run_full_workflow()
+        for _ in range(20):
+            await pilot.pause(0.2)
+            status = str(app.query_one("#status", Label).render())
+            if "Done" in status or "failed" in status.lower() or "stopped" in status.lower():
+                break
+
+        assert "Done" in status, f"unexpected final status: {status}"
+        assert app._transcript_text
+        assert app._summary_text == "## Summary\nA short summary."
+
+        exported = list(tmp_path.glob("meeting-summary-*.md"))
+        assert len(exported) == 1
+        content = exported[0].read_text(encoding="utf-8")
+        assert "Hello world." in content
+        assert "A short summary." in content
+
+
+@pytest.mark.asyncio
+async def test_full_workflow_stops_chain_on_transcription_failure(
+    tmp_path, monkeypatch
+) -> None:
+    """Regression: if transcription fails, the workflow must stop there
+    -- never call summarize or export with an empty/garbage transcript."""
+    audio_path = tmp_path / "bad.mp3"
+    audio_path.write_text("fake")
+
+    def failing_transcribe(*args, **kwargs):
+        raise RuntimeError("simulated transcription failure")
+
+    summarize_called = False
+
+    async def fake_summarize(*args, **kwargs):
+        nonlocal summarize_called
+        summarize_called = True
+        yield "should never happen"
+
+    monkeypatch.setattr(
+        "transcriber.app.transcribe_mod.transcribe", failing_transcribe
+    )
+    monkeypatch.setattr("transcriber.app.summarize_mod.summarize", fake_summarize)
+
+    app = TranscriberApp()
+    async with app.run_test(size=(100, 30)) as pilot:
+        app.query_one("#file-input", Input).value = str(audio_path)
+        app.action_run_full_workflow()
+        for _ in range(20):
+            await pilot.pause(0.2)
+            status = str(app.query_one("#status", Label).render())
+            if "stopped" in status.lower():
+                break
+
+        assert "stopped" in status.lower()
+        assert "transcription failed" in status.lower()
+        assert not summarize_called
+        assert not list(tmp_path.glob("*.md"))
+
+
+@pytest.mark.asyncio
+async def test_full_workflow_stops_chain_on_summarization_failure(
+    tmp_path, monkeypatch
+) -> None:
+    """Regression: if summarization fails, no export should happen, but
+    the transcript that succeeded must still be visible/exportable
+    separately (not silently discarded)."""
+    from transcriber.transcribe import Segment, Transcript
+
+    audio_path = tmp_path / "meeting.mp3"
+    audio_path.write_text("fake")
+
+    fake_transcript = Transcript(
+        text="Hello.",
+        segments=[Segment(start=0.0, end=1.0, text="Hello.")],
+        language="en",
+        duration=1.0,
+    )
+
+    async def failing_summarize(*args, **kwargs):
+        raise RuntimeError("simulated summarization failure")
+        yield  # pragma: no cover -- makes this an async generator
+
+    monkeypatch.setattr(
+        "transcriber.app.transcribe_mod.transcribe", lambda *a, **k: fake_transcript
+    )
+    monkeypatch.setattr(
+        "transcriber.app.summarize_mod.summarize", failing_summarize
+    )
+
+    app = TranscriberApp()
+    async with app.run_test(size=(100, 30)) as pilot:
+        app.query_one("#file-input", Input).value = str(audio_path)
+        app.action_run_full_workflow()
+        for _ in range(20):
+            await pilot.pause(0.2)
+            status = str(app.query_one("#status", Label).render())
+            if "stopped" in status.lower():
+                break
+
+        assert "stopped" in status.lower()
+        assert "summarization failed" in status.lower()
+        assert app._transcript_text  # transcript survives the failure
+        assert not list(tmp_path.glob("*.md"))  # nothing exported

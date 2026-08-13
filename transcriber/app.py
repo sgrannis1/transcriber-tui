@@ -61,6 +61,7 @@ class TranscriberApp(App):
         Binding("o", "browse", "Browse File"),
         Binding("d", "edit_env", "Edit .env"),
         Binding("x", "export_markdown", "Export .md"),
+        Binding("f", "run_full_workflow", "Full Workflow"),
     ]
 
     def __init__(self, audio_path: str | None = None) -> None:
@@ -86,6 +87,7 @@ class TranscriberApp(App):
                 yield Button("Browse", id="browse-btn")
                 yield Button("Transcribe", id="transcribe-btn", variant="primary")
                 yield Button("Export .md", id="export-btn")
+                yield Button("Full Workflow", id="full-workflow-btn", variant="success")
             yield Label("", id="meta-row")
             yield Label("", id="status")
             with Horizontal(id="loading"):
@@ -365,6 +367,8 @@ class TranscriberApp(App):
             self.action_browse()
         elif event.button.id == "export-btn":
             self.action_export_markdown()
+        elif event.button.id == "full-workflow-btn":
+            self.action_run_full_workflow()
 
     def action_browse(self) -> None:
         """Open the file picker modal; set the input on selection."""
@@ -416,6 +420,103 @@ class TranscriberApp(App):
             self._status(f"Export failed: {exc}")
             return
         self._status(f"Exported to {saved_path}")
+
+    def action_run_full_workflow(self) -> None:
+        """Transcribe -> summarize -> export in one shot (F).
+
+        The common workflow: point the file input at an audio file, then
+        press F once instead of T, waiting, S, waiting, X. Runs as a
+        single async worker so each stage's status/errors are reported
+        as they happen, and a failure at any stage stops the chain
+        (e.g. a failed transcription never gets summarized or exported)
+        rather than silently producing a partial or garbage result.
+        """
+        if self._working:
+            return
+        path = self.query_one("#file-input", Input).value.strip()
+        if not path or not Path(path).exists():
+            self._status(f"File not found: {path or '(empty)'}")
+            return
+
+        cfg = self._config
+        if cfg.uses_openrouter and not cfg.openrouter_api_key:
+            self._status(
+                "Missing OPENROUTER_API_KEY — set it in .env (or cycle backend with B)"
+            )
+            return
+
+        self.run_worker(self._do_full_workflow(path), exclusive=True)
+
+    async def _do_full_workflow(self, path: str) -> None:
+        """Transcribe, then summarize, then export — stops on the first failure."""
+        self._status(f"[1/3] Transcribing {os.path.basename(path)} ...")
+        self._loading(True, "Transcribing ...")
+        try:
+            result = await asyncio.to_thread(
+                transcribe_mod.transcribe,
+                path,
+                model_size=getattr(self._config, "whisper_model", "base"),
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._loading(False)
+            self._status(f"Full workflow stopped — transcription failed: {exc}")
+            return
+
+        self._transcript_text = transcribe_mod.format_segments(result)
+        self.query_one("#transcript-area", TextArea).text = self._transcript_text
+        self._status(
+            f"[2/3] Transcribed {result.duration:.1f}s of audio — summarizing ..."
+        )
+
+        prompt = self._current_prompt()
+        self._summary_text = ""
+        self.query_one("#summary-area", TextArea).text = ""
+        cfg = self._config
+        try:
+            async for chunk in summarize_mod.summarize(
+                self._transcript_text,
+                prompt,
+                cfg.summarize_model,
+                cfg.openrouter_api_key if cfg.uses_openrouter else "",
+                cfg.summarize_base_url,
+            ):
+                self._summary_text += chunk
+                self.query_one("#summary-area", TextArea).text = self._summary_text
+        except Exception as exc:  # noqa: BLE001
+            self._loading(False)
+            self._status(
+                f"Full workflow stopped — summarization failed: {exc} "
+                "(transcript was saved to the Transcript pane; press X to export it alone)"
+            )
+            return
+
+        self._status("[3/3] Exporting markdown ...")
+        prompt_name = (
+            self._prompt_names[self._prompt_index] if self._prompt_names else ""
+        )
+        content = export_mod.build_markdown(
+            audio_path=path,
+            transcript_text=self._transcript_text,
+            summary_text=self._summary_text,
+            prompt_name=prompt_name,
+            backend=cfg.summarize_backend,
+            model=cfg.summarize_model,
+            whisper_model=cfg.whisper_model,
+        )
+        export_dir = getattr(cfg, "export_dir", "") or None
+        target = export_mod.default_export_path(path, export_dir)
+        try:
+            saved_path = export_mod.save_markdown(content, target)
+        except OSError as exc:
+            self._loading(False)
+            self._status(
+                f"Transcribed and summarized, but export failed: {exc} "
+                "(press X to retry once fixed)"
+            )
+            return
+
+        self._loading(False)
+        self._status(f"Done — transcribed, summarized, and exported to {saved_path}")
 
 
 def run(audio_path: str | None = None) -> None:
