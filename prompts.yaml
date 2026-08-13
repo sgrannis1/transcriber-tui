@@ -1,0 +1,8 @@
+# Transcript summarization prompts.
+# Edit this file directly (E in the TUI) to tune prompts for your needs.
+# Reload with R after editing.
+#
+meeting_summary: "You are a meeting assistant. Summarize this transcript with: ## Summary (2-3 sentences), ## Key Points (bullets), ## Action Items (with owners if mentioned), ## Decisions. Be concise."
+lecture_notes: "You are a study assistant. Convert this lecture transcript into organized notes: ## Main Concepts, ## Key Terms, ## Examples, ## Questions to follow up on."
+quick_recap: "You are a recapper. Give a 3-bullet recap of this transcript in plain language. No headers."
+custom: "Paste your own summarization instructions here. This is the one you edit over time for your specific needs."
