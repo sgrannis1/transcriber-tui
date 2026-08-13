@@ -40,7 +40,7 @@ On first run, Whisper downloads the `base` model (~142MB) to `~/.cache/huggingfa
 |-----|--------|
 | `T` | Transcribe the selected audio file |
 | `S` | Summarize the transcript |
-| `B` | Cycle summarization backend (openrouter → ollama → llamacpp → local) |
+| `B` | Cycle summarization backend (openrouter → ollama → llamacpp → lmstudio → local) |
 | `E` | Edit prompts in `$EDITOR` (default: vim) |
 | `R` | Reload prompts from disk |
 | `C` | Cycle to the next prompt preset |
@@ -55,6 +55,7 @@ The summarizer supports multiple backends, cycled at runtime with `B` or set via
 | `openrouter` | `https://openrouter.ai/api/v1` | `OPENROUTER_MODEL` | `OPENROUTER_API_KEY` |
 | `ollama` | `http://localhost:11434/v1` | `OLLAMA_MODEL` | none |
 | `llamacpp` | `http://localhost:8080/v1` | `LLAMACPP_MODEL` | none |
+| `lmstudio` | `http://localhost:1234/v1` | `LMSTUDIO_MODEL` | none |
 | `local` | `http://localhost:11434/v1`* | `LOCAL_MODEL` | none |
 
 *Override with `SUMMARIZE_BASE_URL` for any OpenAI-compatible endpoint (LM Studio, vLLM, etc.).
@@ -80,6 +81,7 @@ All settings via environment or `.env`:
 | `OPENROUTER_MODEL` | `deepseek/deepseek-v4-flash-0731` | Cloud LLM model (openrouter backend) |
 | `OLLAMA_MODEL` | `hermes-qwen35b:latest` | Local model name (ollama backend) |
 | `LLAMACPP_MODEL` | *(empty)* | Local model name (llamacpp backend) |
+| `LMSTUDIO_MODEL` | *(empty)* | Local model name (lmstudio backend) |
 | `WHISPER_MODEL` | `base` | Whisper model: `tiny`, `base`, `small`, `medium`, `large-v3` |
 | `EDITOR` | `vim` | Text editor for prompt editing |
 

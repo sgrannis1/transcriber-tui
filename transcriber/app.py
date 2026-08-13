@@ -64,7 +64,7 @@ class TranscriberApp(App):
         self._summary_text = ""
         self._prompt_names: list[str] = []
         self._prompt_index = 0
-        self._backends = ("openrouter", "ollama", "llamacpp", "local")
+        self._backends = ("openrouter", "ollama", "llamacpp", "lmstudio", "local")
         self._backend_index = 0
         self._working = False
 
@@ -261,6 +261,7 @@ class TranscriberApp(App):
             "openrouter": "deepseek/deepseek-v4-flash-0731",
             "ollama": "hermes-qwen35b:latest",
             "llamacpp": "",
+            "lmstudio": "",
             "local": "",
         }
         self._config.summarize_model = defaults.get(backend, "")

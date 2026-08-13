@@ -15,15 +15,16 @@ DEFAULT_WHISPER_MODEL = "base"
 VALID_WHISPER_MODELS = ("tiny", "base", "small", "medium", "large-v3")
 
 # Recognised summarization backends.
-SummarizeBackend = Literal["openrouter", "ollama", "llamacpp", "local"]
-VALID_BACKENDS = ("openrouter", "ollama", "llamacpp", "local")
+SummarizeBackend = Literal["openrouter", "ollama", "llamacpp", "lmstudio", "local"]
+VALID_BACKENDS = ("openrouter", "ollama", "llamacpp", "lmstudio", "local")
 
 # Default base URLs for each backend.
 _BACKEND_BASE_URLS: dict[str, str] = {
     "openrouter": "https://openrouter.ai/api/v1",
     "ollama": "http://localhost:11434/v1",
     "llamacpp": "http://localhost:8080/v1",
-    "local": "http://localhost:11434/v1",  # generic; override with SUMMARIZE_BASE_URL
+    "lmstudio": "http://localhost:1234/v1",
+    "local": "http://localhost:11434/v1",
 }
 
 
@@ -102,6 +103,8 @@ def load_config() -> Config:
             model = os.environ.get("OLLAMA_MODEL", "hermes-qwen35b:latest")
         elif backend == "llamacpp":
             model = os.environ.get("LLAMACPP_MODEL", "")
+        elif backend == "lmstudio":
+            model = os.environ.get("LMSTUDIO_MODEL", "")
         else:
             model = os.environ.get("LOCAL_MODEL", "")
 
